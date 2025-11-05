@@ -196,7 +196,37 @@ satva-wellness-booking/
 
 ## Развертывание
 
-Подробные инструкции по развертыванию в production окружении смотрите в файле `DEPLOYMENT.md`.
+### Docker (рекомендуется)
+
+Проект готов к развертыванию с помощью Docker и Docker Compose. Подробные инструкции для Digital Ocean VPS смотрите в файле `DOCKER_DEPLOYMENT.md`.
+
+**Быстрый старт:**
+```bash
+# Клонировать репозиторий
+git clone https://github.com/santex85/satva_willnes_booking.git
+cd satva_willnes_booking
+
+# Создать .env файл из примера
+cp .env.example .env
+# Отредактировать .env файл с вашими настройками
+
+# Запустить контейнеры
+docker compose up -d
+
+# Создать суперпользователя
+docker compose exec web python manage.py createsuperuser
+```
+
+Или используйте Makefile:
+```bash
+make build
+make up
+make createsuperuser
+```
+
+### Традиционный деплой
+
+Подробные инструкции по традиционному развертыванию (Gunicorn + Nginx) смотрите в файле `DEPLOYMENT.md`.
 
 ## Группы пользователей
 

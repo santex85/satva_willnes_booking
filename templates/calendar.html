@@ -1,0 +1,508 @@
+{% extends 'base.html' %}
+
+{% block title %}Календарь бронирований{% endblock %}
+
+{% block extra_css %}
+<link href="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.0/main.min.css" rel="stylesheet">
+<style>
+    #calendar {
+        max-width: 100%;
+        margin: 0 auto;
+    }
+    .fc-event-title {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .fc-daygrid-day:hover,
+    .fc-timegrid-slot:hover {
+        cursor: pointer;
+    }
+    .legend {
+        display: flex;
+        gap: 1rem;
+        flex-wrap: wrap;
+        margin-top: 0.5rem;
+        margin-bottom: 1rem;
+        padding: 0.75rem;
+        background-color: #f8f9fa;
+        border-radius: 0.375rem;
+    }
+    .legend-item {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.9rem;
+    }
+    .legend-color {
+        width: 20px;
+        height: 20px;
+        border-radius: 4px;
+        border: 2px solid;
+        flex-shrink: 0;
+    }
+    /* Адаптивность для мобильных устройств */
+    @media (max-width: 768px) {
+        .fc-header-toolbar {
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        .fc-toolbar-chunk {
+            display: flex;
+            justify-content: center;
+            width: 100%;
+        }
+        .fc-button-group {
+            width: 100%;
+            display: flex;
+        }
+        .fc-button {
+            flex: 1;
+            font-size: 0.75rem;
+            padding: 0.25rem 0.5rem;
+        }
+        .fc-today-button {
+            width: 100%;
+        }
+        .fc-prev-button, .fc-next-button {
+            flex: 0 0 auto;
+        }
+        .legend {
+            gap: 0.5rem;
+            padding: 0.5rem;
+        }
+        .legend-item {
+            font-size: 0.75rem;
+        }
+        .legend-color {
+            width: 16px;
+            height: 16px;
+        }
+        .btn-group {
+            width: 100%;
+            display: flex;
+            flex-wrap: wrap;
+        }
+        .btn-group .btn {
+            flex: 1;
+            min-width: 80px;
+            font-size: 0.875rem;
+            padding: 0.375rem 0.5rem;
+        }
+    }
+    /* Улучшение модальных окон для мобильных */
+    @media (max-width: 576px) {
+        .modal-dialog {
+            margin: 0.5rem;
+        }
+        .modal-content {
+            border-radius: 0.5rem;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-3 mb-md-4">
+    <h1 class="h3 mb-2 mb-md-0"><i class="bi bi-calendar-week"></i> Календарь бронирований</h1>
+    <a href="{% url 'select_service' %}" class="btn btn-primary">
+        <i class="bi bi-plus-circle"></i> <span class="d-none d-sm-inline">Создать бронирование</span><span class="d-sm-none">Создать</span>
+    </a>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <div class="btn-group mb-3 w-100 d-md-inline-flex" role="group">
+            <button type="button" class="btn btn-outline-primary" onclick="switchView('dayGridMonth')">
+                <i class="bi bi-calendar3"></i> <span class="d-none d-sm-inline">Месяц</span>
+            </button>
+            <button type="button" class="btn btn-outline-primary" onclick="switchView('timeGridWeek')">
+                <i class="bi bi-grid-3x3"></i> <span class="d-none d-sm-inline">Неделя</span>
+            </button>
+            <button type="button" class="btn btn-outline-primary" onclick="switchView('timeGridDay')">
+                <i class="bi bi-calendar-day"></i> <span class="d-none d-sm-inline">День</span>
+            </button>
+        </div>
+
+        <!-- Легенда кабинетов -->
+        <div class="legend">
+            {% for item in cabinets_with_colors %}
+            <div class="legend-item">
+                <div class="legend-color" style="background-color: {{ item.bg_color }}; border-color: {{ item.border_color }};"></div>
+                <span>{{ item.cabinet.name }}</span>
+            </div>
+            {% endfor %}
+        </div>
+
+        <div id="calendar"></div>
+    </div>
+</div>
+
+<!-- Модальное окно для быстрого создания бронирования -->
+<div class="modal fade" id="quickBookingModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-plus-circle"></i> Создать бронирование</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="quickBookingForm">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <div class="alert alert-info">
+                        <i class="bi bi-calendar3"></i> Дата и время: <strong id="selectedDateTime"></strong>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="service_variant" class="form-label">Услуга *</label>
+                        <select class="form-select" id="service_variant" name="service_variant" required>
+                            <option value="">Выберите услугу</option>
+                            {% for service in services %}
+                            <option value="{{ service.id }}">{{ service.service.name }} - {{ service.name_suffix }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="specialist" class="form-label">Специалист *</label>
+                        <select class="form-select" id="specialist" name="specialist" required>
+                            <option value="">Сначала выберите услугу</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="guest_name" class="form-label">Имя гостя *</label>
+                        <input type="text" class="form-control" id="guest_name" name="guest_name" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="guest_room_number" class="form-label">Номер комнаты</label>
+                        <input type="text" class="form-control" id="guest_room_number" name="guest_room_number">
+                    </div>
+
+                    <input type="hidden" id="start_datetime" name="start_datetime" value="">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-circle"></i> Создать
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Модальное окно для результатов -->
+<div class="modal fade" id="resultModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header" id="resultHeader">
+                <h5 class="modal-title" id="resultTitle"></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="resultBody"></div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-primary" data-bs-dismiss="modal">OK</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.0/main.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.0/locales/ru.js"></script>
+<script>
+    let calendar;
+    let currentView = 'timeGridWeek';
+    let currentResourceType = 'specialist';
+
+    // Получаем CSRF token
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+    const csrftoken = getCookie('csrftoken');
+
+    document.addEventListener('DOMContentLoaded', function() {
+        initCalendar();
+    });
+
+    function initCalendar() {
+        const calendarEl = document.getElementById('calendar');
+
+        calendar = new FullCalendar.Calendar(calendarEl, {
+            initialView: currentView,
+            locale: 'ru',
+            headerToolbar: {
+                left: 'prev,next today',
+                center: 'title',
+                right: 'dayGridMonth,timeGridWeek,timeGridDay'
+            },
+            // Адаптивность для мобильных устройств
+            height: 'auto',
+            aspectRatio: window.innerWidth < 768 ? 1.5 : 1.8,
+            eventDisplay: 'block',
+            eventTimeFormat: {
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: false
+            },
+            events: '/calendar/feed/',
+            slotMinTime: '08:00:00',
+            slotMaxTime: '22:00:00',
+            slotDuration: '00:30:00',
+            eventClick: function(info) {
+                // Открываем детальную страницу бронирования
+                window.location.href = '/booking/' + info.event.id + '/';
+            },
+            dateClick: function(info) {
+                // Обработка клика на свободный слот
+                const view = info.view.type;
+                
+                if (view === 'dayGridMonth') {
+                    // В месячном виде открываем модальное окно с выбранной датой
+                    // Устанавливаем время на начало рабочего дня (например, 09:00)
+                    const selectedDate = new Date(info.date);
+                    selectedDate.setHours(9, 0, 0, 0); // Устанавливаем 09:00
+                    openQuickBookingModal(selectedDate, info.dateStr);
+                } else {
+                    // В временных видах (неделя, день) используем точное время клика
+                    openQuickBookingModal(info.date, info.dateStr);
+                }
+            },
+            eventDrop: function(info) {
+                // Обработка перетаскивания события
+                handleEventDrop(info);
+            },
+            eventStartEditable: true,
+            eventDurationEditable: false,  // Запрещаем изменение длительности через drag
+            editable: true,
+            allDaySlot: false
+        });
+
+        calendar.render();
+    }
+
+    function switchView(viewType) {
+        currentView = viewType;
+        calendar.destroy();
+        initCalendar();
+    }
+
+    function openQuickBookingModal(date, dateStr) {
+        // Форматируем дату для отображения
+        const localDate = new Date(date);
+        
+        // Проверяем, является ли это кликом из месячного вида
+        const isMonthView = calendar.view.type === 'dayGridMonth';
+        
+        let formattedDate;
+        if (isMonthView) {
+            // Для месячного вида показываем только дату без времени
+            formattedDate = localDate.toLocaleDateString('ru-RU', {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+            });
+        } else {
+            // Для временных видов показываем дату и время
+            formattedDate = localDate.toLocaleString('ru-RU', {
+                weekday: 'short',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        document.getElementById('selectedDateTime').textContent = formattedDate;
+
+        // Форматируем дату в локальное время для отправки на сервер
+        // Формат: YYYY-MM-DDTHH:MM (локальное время, не UTC)
+        const year = localDate.getFullYear();
+        const month = String(localDate.getMonth() + 1).padStart(2, '0');
+        const day = String(localDate.getDate()).padStart(2, '0');
+        const hours = String(localDate.getHours()).padStart(2, '0');
+        const minutes = String(localDate.getMinutes()).padStart(2, '0');
+        const localDateTime = `${year}-${month}-${day}T${hours}:${minutes}`;
+
+        document.getElementById('start_datetime').value = localDateTime;
+
+        // Сбрасываем форму
+        document.getElementById('quickBookingForm').reset();
+        document.getElementById('start_datetime').value = localDateTime;
+        document.getElementById('specialist').innerHTML = '<option value="">Сначала выберите услугу</option>';
+
+        // Показываем модальное окно
+        const modal = new bootstrap.Modal(document.getElementById('quickBookingModal'));
+        modal.show();
+    }
+
+    function handleEventDrop(info) {
+        // Откатываем событие на случай ошибки
+        const revert = info.revert;
+
+        const event = info.event;
+        const newStart = event.start;
+        const bookingId = event.id;
+
+        // Форматируем дату в ISO-формат
+        const startDatetime = newStart.toISOString().slice(0, 16);
+
+        // Отправляем AJAX запрос
+        const formData = new FormData();
+        formData.append('booking_id', bookingId);
+        formData.append('start_datetime', startDatetime);
+
+        fetch('/booking/update-time/', {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-CSRFToken': csrftoken
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (!data.success) {
+                // Показываем ошибку
+                showResultModal('Ошибка', data.error, false);
+                // Откатываем изменение
+                revert();
+                // Обновляем календарь
+                calendar.refetchEvents();
+            } else {
+                // Показываем успех
+                showResultModal('Успех', 'Время бронирования изменено', true);
+            }
+        })
+        .catch(error => {
+            console.error('Error updating booking time:', error);
+            showResultModal('Ошибка', 'Произошла ошибка при изменении времени', false);
+            // Откатываем изменение
+            revert();
+            // Обновляем календарь
+            calendar.refetchEvents();
+        });
+    }
+
+    function showResultModal(title, message, isSuccess) {
+        const resultModal = new bootstrap.Modal(document.getElementById('resultModal'));
+        document.getElementById('resultTitle').textContent = title;
+        document.getElementById('resultHeader').className = isSuccess ? 'modal-header bg-success text-white' : 'modal-header bg-danger text-white';
+        document.getElementById('resultBody').innerHTML = `<p>${message}</p>`;
+        resultModal.show();
+
+        setTimeout(() => {
+            bootstrap.Modal.getInstance(document.getElementById('resultModal')).hide();
+        }, 2000);
+    }
+
+    // Загрузка специалистов при выборе услуги
+    document.getElementById('service_variant').addEventListener('change', function() {
+        const serviceVariantId = this.value;
+        const specialistSelect = document.getElementById('specialist');
+
+        if (!serviceVariantId) {
+            specialistSelect.innerHTML = '<option value="">Сначала выберите услугу</option>';
+            return;
+        }
+
+        // Показываем загрузку
+        specialistSelect.innerHTML = '<option value="">Загрузка...</option>';
+
+        // Загружаем специалистов
+        fetch(`/api/specialists-for-service/?service_variant_id=${serviceVariantId}`)
+            .then(response => response.json())
+            .then(data => {
+                specialistSelect.innerHTML = '<option value="">Выберите специалиста</option>';
+                data.forEach(specialist => {
+                    const option = document.createElement('option');
+                    option.value = specialist.id;
+                    option.textContent = specialist.full_name;
+                    specialistSelect.appendChild(option);
+                });
+            })
+            .catch(error => {
+                console.error('Error loading specialists:', error);
+                specialistSelect.innerHTML = '<option value="">Ошибка загрузки</option>';
+            });
+    });
+
+    // Обработка отправки формы
+    document.getElementById('quickBookingForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+
+        const formData = new FormData(this);
+        const submitButton = this.querySelector('button[type="submit"]');
+        submitButton.disabled = true;
+        submitButton.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Создание...';
+
+        fetch('/booking/quick-create/', {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-CSRFToken': formData.get('csrfmiddlewaretoken')
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            submitButton.disabled = false;
+            submitButton.innerHTML = '<i class="bi bi-check-circle"></i> Создать';
+
+            // Закрываем модальное окно формы
+            bootstrap.Modal.getInstance(document.getElementById('quickBookingModal')).hide();
+
+            // Показываем результат
+            const resultModal = new bootstrap.Modal(document.getElementById('resultModal'));
+
+            if (data.success) {
+                document.getElementById('resultTitle').textContent = 'Успех';
+                document.getElementById('resultHeader').className = 'modal-header bg-success text-white';
+                document.getElementById('resultBody').innerHTML = `<p>${data.message}</p>`;
+            } else {
+                document.getElementById('resultTitle').textContent = 'Ошибка';
+                document.getElementById('resultHeader').className = 'modal-header bg-danger text-white';
+                document.getElementById('resultBody').innerHTML = `<p>${data.error}</p>`;
+            }
+
+            resultModal.show();
+
+            // Обновляем календарь
+            calendar.refetchEvents();
+
+            // Закрываем модальное окно результата через 2 секунды
+            setTimeout(() => {
+                bootstrap.Modal.getInstance(document.getElementById('resultModal')).hide();
+            }, 2000);
+        })
+        .catch(error => {
+            console.error('Error creating booking:', error);
+            submitButton.disabled = false;
+            submitButton.innerHTML = '<i class="bi bi-check-circle"></i> Создать';
+
+            bootstrap.Modal.getInstance(document.getElementById('quickBookingModal')).hide();
+
+            const resultModal = new bootstrap.Modal(document.getElementById('resultModal'));
+            document.getElementById('resultTitle').textContent = 'Ошибка';
+            document.getElementById('resultHeader').className = 'modal-header bg-danger text-white';
+            document.getElementById('resultBody').innerHTML = '<p>Произошла ошибка при создании бронирования</p>';
+            resultModal.show();
+        });
+    });
+</script>
+{% endblock %}
+

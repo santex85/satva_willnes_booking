@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+
+{% block title %}Выбор услуги{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-12 col-md-8 col-lg-6">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h3 class="mb-0 h4"><i class="bi bi-calendar-plus"></i> Создание бронирования - Шаг 1</h3>
+            </div>
+            <div class="card-body">
+                <form method="GET" action="{% url 'select_slot' %}">
+                    <div class="mb-3">
+                        <label for="{{ form.service_variant.id_for_label }}" class="form-label">
+                            <i class="bi bi-heart-pulse"></i> Выберите услугу
+                        </label>
+                        {{ form.service_variant }}
+                    </div>
+                    <div class="mb-3">
+                        <label for="{{ form.date.id_for_label }}" class="form-label">
+                            <i class="bi bi-calendar3"></i> Выберите дату
+                        </label>
+                        {{ form.date }}
+                    </div>
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        <a href="{% url 'calendar' %}" class="btn btn-secondary">
+                            <i class="bi bi-x-circle"></i> Отмена
+                        </a>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-arrow-right"></i> Далее
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+

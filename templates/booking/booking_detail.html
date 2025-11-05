@@ -1,0 +1,134 @@
+{% extends 'base.html' %}
+
+{% block title %}Бронирование #{{ booking.id }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-12 col-md-10 col-lg-8">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h3 class="mb-0 h4"><i class="bi bi-calendar-check"></i> Бронирование #{{ booking.id }}</h3>
+            </div>
+            <div class="card-body">
+                <!-- Информация о бронировании -->
+                <div class="row mb-3 mb-md-4 g-3">
+                    <div class="col-12 col-md-6">
+                        <h5 class="text-muted mb-3">Информация</h5>
+                        <p><strong><i class="bi bi-person"></i> Гость:</strong> {{ booking.guest_name }}</p>
+                        {% if booking.guest_room_number %}
+                        <p><strong><i class="bi bi-door-open"></i> Комната:</strong> {{ booking.guest_room_number }}</p>
+                        {% endif %}
+                        <p><strong><i class="bi bi-clipboard-check"></i> Статус:</strong>
+                            {% if booking.status == 'confirmed' %}
+                                <span class="badge bg-success">Подтверждено</span>
+                            {% elif booking.status == 'paid' %}
+                                <span class="badge bg-primary">Оплачено</span>
+                            {% elif booking.status == 'completed' %}
+                                <span class="badge bg-info">Выполнено</span>
+                            {% elif booking.status == 'canceled' %}
+                                <span class="badge bg-danger">Отменено</span>
+                            {% endif %}
+                        </p>
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <h5 class="text-muted mb-2 mb-md-3 h6">Детали услуги</h5>
+                        <p><strong><i class="bi bi-heart-pulse"></i> Услуга:</strong> {{ booking.service_variant.service.name }}</p>
+                        <p><strong><i class="bi bi-clock"></i> Длительность:</strong> {{ booking.service_variant.name_suffix }}</p>
+                        <p><strong><i class="bi bi-person-badge"></i> Специалист:</strong> {{ booking.specialist.full_name }}</p>
+                        <p><strong><i class="bi bi-building"></i> Кабинет:</strong> {{ booking.cabinet.name }}</p>
+                    </div>
+                </div>
+
+                <hr>
+
+                <!-- Редактирование -->
+                <h5 class="h6 mb-3"><i class="bi bi-pencil-square"></i> Редактировать бронирование</h5>
+                <form method="POST">
+                    {% csrf_token %}
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-12 col-md-6">
+                            {{ form.guest_name.label_tag }}
+                            {{ form.guest_name }}
+                            {% if form.guest_name.errors %}
+                                <div class="text-danger">{{ form.guest_name.errors }}</div>
+                            {% endif %}
+                        </div>
+                        <div class="col-12 col-md-6">
+                            {{ form.guest_room_number.label_tag }}
+                            {{ form.guest_room_number }}
+                            {% if form.guest_room_number.errors %}
+                                <div class="text-danger">{{ form.guest_room_number.errors }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-12 col-md-6">
+                            {{ form.start_datetime.label_tag }}
+                            {{ form.start_datetime }}
+                            {% if form.start_datetime.errors %}
+                                <div class="text-danger">{{ form.start_datetime.errors }}</div>
+                            {% endif %}
+                        </div>
+                        <div class="col-12 col-md-6">
+                            {{ form.status.label_tag }}
+                            {{ form.status }}
+                            {% if form.status.errors %}
+                                <div class="text-danger">{{ form.status.errors }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    {% if form.non_field_errors %}
+                        <div class="alert alert-danger">
+                            {{ form.non_field_errors }}
+                        </div>
+                    {% endif %}
+
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end mt-3 mt-md-4">
+                        <a href="{% url 'calendar' %}" class="btn btn-secondary">
+                            <i class="bi bi-arrow-left"></i> <span class="d-none d-sm-inline">Назад к календарю</span><span class="d-sm-none">Назад</span>
+                        </a>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-circle"></i> <span class="d-none d-sm-inline">Сохранить изменения</span><span class="d-sm-none">Сохранить</span>
+                        </button>
+                    </div>
+                </form>
+
+                <hr class="my-4">
+
+                <!-- Опасные действия -->
+                <div class="alert alert-danger">
+                    <h5><i class="bi bi-exclamation-triangle"></i> Опасные действия</h5>
+                    <p class="mb-2">Удаление бронирования нельзя отменить.</p>
+                    <a href="{% url 'booking_delete' booking.pk %}" class="btn btn-danger btn-sm">
+                        <i class="bi bi-trash"></i> Удалить бронирование
+                    </a>
+                </div>
+
+                <!-- Техническая информация -->
+                <div class="mt-4">
+                    <button class="btn btn-link text-muted p-0" type="button" data-bs-toggle="collapse" data-bs-target="#technicalInfo">
+                        <small><i class="bi bi-info-circle"></i> Техническая информация</small>
+                    </button>
+                    <div class="collapse mt-2" id="technicalInfo">
+                        <div class="card card-body bg-light">
+                            <small>
+                                <strong>ID:</strong> {{ booking.id }}<br>
+                                <strong>Время окончания:</strong> {{ booking.end_time|date:"d.m.Y H:i" }}<br>
+                                {% if booking.created_by %}
+                                <strong>Создано:</strong> {{ booking.created_by.username }}
+                                {% else %}
+                                <strong>Создано:</strong> Система
+                                {% endif %}
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+

@@ -1,0 +1,102 @@
+{% extends 'base.html' %}
+
+{% block title %}Выбор времени{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-12 col-lg-10">
+        <div class="card shadow">
+            <div class="card-header bg-success text-white">
+                <h3 class="mb-0 h4"><i class="bi bi-clock-history"></i> Создание бронирования - Шаг 2</h3>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info mb-3 mb-md-4">
+                    <h5 class="h6"><i class="bi bi-info-circle"></i> Выберите доступное время</h5>
+                    <p class="mb-0 small">
+                        <strong>Услуга:</strong> {{ service_variant.service.name }} - {{ service_variant.name_suffix }}<br>
+                        <strong>Дата:</strong> {{ date|date:"d.m.Y" }}
+                    </p>
+                </div>
+
+                <form method="POST" action="{% url 'create_booking' %}">
+                    {% csrf_token %}
+
+                    <!-- Скрытые поля -->
+                    <input type="hidden" name="service_variant" value="{{ form_data.service_variant }}">
+                    <input type="hidden" name="date" value="{{ form_data.date }}">
+
+                    <h5 class="h6 mb-3"><i class="bi bi-clock"></i> Доступные слоты:</h5>
+                    <div class="row g-2 g-md-3">
+                        {% for slot in slots %}
+                        <div class="col-12 col-sm-6 col-md-4 mb-2 mb-md-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="selected_slot"
+                                       id="slot_{{ forloop.counter }}"
+                                       value="{{ slot.start_time|date:'Y-m-d\TH:i:s' }}|{{ slot.specialist.id }}|{{ slot.cabinet.id }}" required>
+                                <label class="form-check-label card border-success" for="slot_{{ forloop.counter }}" style="cursor: pointer; width: 100%;">
+                                    <div class="card-body">
+                                        <strong><i class="bi bi-clock"></i> {{ slot.start_time|time:"H:i" }}</strong><br>
+                                        <small class="text-muted">
+                                            <i class="bi bi-person"></i> {{ slot.specialist.full_name }}<br>
+                                            <i class="bi bi-building"></i> {{ slot.cabinet.name }}
+                                        </small>
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
+                        {% empty %}
+                        <div class="col-12">
+                            <div class="alert alert-warning">
+                                <i class="bi bi-exclamation-triangle"></i>
+                                К сожалению, на выбранную дату нет доступных слотов.
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+
+                    {% if slots %}
+                    <hr class="my-4">
+
+                    <h5 class="h6 mb-3"><i class="bi bi-person-badge"></i> Данные гостя:</h5>
+                    <div class="row g-3">
+                        <div class="col-12 col-md-6">
+                            <label for="guest_name" class="form-label">Имя гостя *</label>
+                            <input type="text" class="form-control" name="guest_name" id="guest_name"
+                                   placeholder="Введите имя гостя" required>
+                        </div>
+                        <div class="col-12 col-md-6">
+                            <label for="guest_room_number" class="form-label">Номер комнаты</label>
+                            <input type="text" class="form-control" name="guest_room_number" id="guest_room_number"
+                                   placeholder="Введите номер комнаты">
+                        </div>
+                    </div>
+
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        <a href="{% url 'select_service' %}" class="btn btn-secondary">
+                            <i class="bi bi-arrow-left"></i> Назад
+                        </a>
+                        <button type="submit" class="btn btn-success">
+                            <i class="bi bi-check-circle"></i> Забронировать
+                        </button>
+                    </div>
+                    {% else %}
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        <a href="{% url 'select_service' %}" class="btn btn-secondary">
+                            <i class="bi bi-arrow-left"></i> Назад
+                        </a>
+                    </div>
+                    {% endif %}
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.form-check-input:checked + .form-check-label {
+    background-color: #d4edda !important;
+    border-color: #28a745 !important;
+}
+</style>
+{% endblock %}
+

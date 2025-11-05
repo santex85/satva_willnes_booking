@@ -1,0 +1,61 @@
+{% extends 'base.html' %}
+
+{% block title %}Вход в систему{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6 col-lg-4">
+        <div class="card shadow">
+            <div class="card-body">
+                <div class="text-center mb-4">
+                    <i class="bi bi-calendar-check-fill text-primary" style="font-size: 4rem;"></i>
+                    <h2 class="mt-3 mb-1">Satva Wellness</h2>
+                    <p class="text-muted">Система бронирования</p>
+                </div>
+
+                {% if form.errors %}
+                    <div class="alert alert-danger" role="alert">
+                        <i class="bi bi-exclamation-triangle"></i> Неверное имя пользователя или пароль.
+                    </div>
+                {% endif %}
+
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label for="id_username" class="form-label">
+                            <i class="bi bi-person"></i> Имя пользователя
+                        </label>
+                        <input type="text" name="username" class="form-control form-control-lg"
+                               id="id_username" autofocus required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="id_password" class="form-label">
+                            <i class="bi bi-lock"></i> Пароль
+                        </label>
+                        <input type="password" name="password" class="form-control form-control-lg"
+                               id="id_password" required>
+                    </div>
+                    <input type="hidden" name="next" value="{{ next }}">
+                    <button type="submit" class="btn btn-primary btn-lg w-100">
+                        <i class="bi bi-box-arrow-in-right"></i> Войти
+                    </button>
+                </form>
+
+                <hr class="my-4">
+
+                <div class="text-center">
+                    <small class="text-muted">
+                        <i class="bi bi-shield-check"></i> Только для авторизованного персонала
+                    </small>
+                    <br>
+                    <small class="text-muted mt-2 d-block">
+                        <i class="bi bi-person-plus"></i> Специалист? <a href="{% url 'specialist_register' %}">Зарегистрироваться</a>
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+

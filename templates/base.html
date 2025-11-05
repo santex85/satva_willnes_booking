@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Satva Wellness Booking{% endblock %}</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <style>
+        /* Кастомная цветовая палитра - более мягкие тона */
+        :root {
+            --bs-primary: #5b8db8;
+            --bs-primary-rgb: 91, 141, 184;
+            --bs-primary-dark: #4a7396;
+            --bs-primary-light: #7ba5c8;
+            
+            --bs-info: #6bb5d4;
+            --bs-info-rgb: 107, 181, 212;
+            
+            --bs-success: #6fb98f;
+            --bs-success-rgb: 111, 185, 143;
+            
+            --bs-warning: #d4a574;
+            --bs-warning-rgb: 212, 165, 116;
+            
+            --bs-danger: #c97a7a;
+            --bs-danger-rgb: 201, 122, 122;
+        }
+        
+        /* Применение мягких цветов */
+        .bg-primary {
+            background-color: var(--bs-primary) !important;
+        }
+        .btn-primary {
+            background-color: var(--bs-primary);
+            border-color: var(--bs-primary);
+        }
+        .btn-primary:hover {
+            background-color: var(--bs-primary-dark);
+            border-color: var(--bs-primary-dark);
+        }
+        .btn-primary:focus, .btn-primary:active {
+            background-color: var(--bs-primary-dark);
+            border-color: var(--bs-primary-dark);
+        }
+        .text-primary {
+            color: var(--bs-primary) !important;
+        }
+        .border-primary {
+            border-color: var(--bs-primary) !important;
+        }
+        
+        /* Кнопки с outline */
+        .btn-outline-primary {
+            color: var(--bs-primary);
+            border-color: var(--bs-primary);
+        }
+        .btn-outline-primary:hover {
+            background-color: var(--bs-primary);
+            border-color: var(--bs-primary);
+            color: white;
+        }
+        .btn-outline-primary:focus, .btn-outline-primary:active {
+            background-color: var(--bs-primary);
+            border-color: var(--bs-primary);
+            color: white;
+        }
+        .btn-outline-primary.active {
+            background-color: var(--bs-primary);
+            border-color: var(--bs-primary);
+            color: white;
+        }
+        
+        .bg-info {
+            background-color: var(--bs-info) !important;
+        }
+        .btn-info {
+            background-color: var(--bs-info);
+            border-color: var(--bs-info);
+        }
+        
+        .bg-success {
+            background-color: var(--bs-success) !important;
+        }
+        .btn-success {
+            background-color: var(--bs-success);
+            border-color: var(--bs-success);
+        }
+        
+        .bg-warning {
+            background-color: var(--bs-warning) !important;
+        }
+        .btn-warning {
+            background-color: var(--bs-warning);
+            border-color: var(--bs-warning);
+        }
+        
+        .bg-danger {
+            background-color: var(--bs-danger) !important;
+        }
+        .btn-danger {
+            background-color: var(--bs-danger);
+            border-color: var(--bs-danger);
+        }
+        
+        /* Навбар с мягким цветом */
+        .navbar-dark.bg-primary {
+            background-color: var(--bs-primary) !important;
+        }
+        
+        /* Badge с мягкими цветами */
+        .badge.bg-primary {
+            background-color: var(--bs-primary) !important;
+        }
+        .badge.bg-success {
+            background-color: var(--bs-success) !important;
+        }
+        .badge.bg-info {
+            background-color: var(--bs-info) !important;
+        }
+        .badge.bg-warning {
+            background-color: var(--bs-warning) !important;
+        }
+        .badge.bg-danger {
+            background-color: var(--bs-danger) !important;
+        }
+        
+        /* Card headers с мягкими цветами */
+        .card-header.bg-primary {
+            background-color: var(--bs-primary) !important;
+        }
+        .card-header.bg-info {
+            background-color: var(--bs-info) !important;
+        }
+        .card-header.bg-success {
+            background-color: var(--bs-success) !important;
+        }
+        .card-header.bg-warning {
+            background-color: var(--bs-warning) !important;
+        }
+        .card-header.bg-danger {
+            background-color: var(--bs-danger) !important;
+        }
+        
+        /* Дополнительные стили для мобильной адаптивности */
+        @media (max-width: 768px) {
+            .navbar-brand {
+                font-size: 1rem;
+            }
+            .card {
+                margin-bottom: 1rem;
+            }
+            .table-responsive {
+                font-size: 0.875rem;
+            }
+            .btn {
+                font-size: 0.875rem;
+            }
+            h1, .h1 {
+                font-size: 1.5rem;
+            }
+            h2, .h2 {
+                font-size: 1.25rem;
+            }
+            h3, .h3 {
+                font-size: 1.1rem;
+            }
+        }
+        @media (max-width: 576px) {
+            .container {
+                padding-left: 0.75rem;
+                padding-right: 0.75rem;
+            }
+            .card-body {
+                padding: 1rem;
+            }
+            .card-header {
+                padding: 0.75rem 1rem;
+            }
+        }
+    </style>
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand" href="{% url 'index' %}">
+                <i class="bi bi-calendar-check"></i> Satva Wellness
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    {% if user.is_authenticated %}
+                        {% if user.is_superuser %}
+                        <li class="nav-item">
+                            <a class="nav-link" href="{% url 'calendar' %}">
+                                <i class="bi bi-calendar-week"></i> Календарь
+                            </a>
+                        </li>
+                        {% else %}
+                            {% comment %} Проверяем группы для обычных пользователей {% endcomment %}
+                            {% for group in user.groups.all %}
+                                {% if group.name == 'Admin' or group.name == 'SuperAdmin' %}
+                                <li class="nav-item">
+                                    <a class="nav-link" href="{% url 'calendar' %}">
+                                        <i class="bi bi-calendar-week"></i> Календарь
+                                    </a>
+                                </li>
+                                {% endif %}
+                            {% endfor %}
+                            {% for group in user.groups.all %}
+                                {% if group.name == 'Specialist' %}
+                                <li class="nav-item">
+                                    <a class="nav-link" href="{% url 'my_schedule' %}">
+                                        <i class="bi bi-clock-history"></i> График
+                                    </a>
+                                </li>
+                                {% endif %}
+                            {% endfor %}
+                        {% endif %}
+                    {% endif %}
+                </ul>
+                <ul class="navbar-nav">
+                    {% if user.is_authenticated %}
+                        <li class="nav-item dropdown">
+                            <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+                                <i class="bi bi-person-circle"></i> {{ user.username }}
+                            </a>
+                            <ul class="dropdown-menu">
+                                {% if user.is_superuser %}
+                                <li><a class="dropdown-item" href="{% url 'reports' %}">
+                                    <i class="bi bi-graph-up"></i> Отчеты
+                                </a></li>
+                                <li><a class="dropdown-item" href="{% url 'manage_schedules' %}">
+                                    <i class="bi bi-calendar-check"></i> Графики
+                                </a></li>
+                                <li><hr class="dropdown-divider"></li>
+                                {% endif %}
+                                <li><a class="dropdown-item" href="{% url 'admin:index' %}">
+                                    <i class="bi bi-gear"></i> Админ-панель
+                                </a></li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li>
+                                    <form method="post" action="{% url 'logout' %}" style="display: inline;">
+                                        {% csrf_token %}
+                                        <button type="submit" class="dropdown-item" style="border: none; background: none; text-align: left; width: 100%;">
+                                            <i class="bi bi-box-arrow-right"></i> Выйти
+                                        </button>
+                                    </form>
+                                </li>
+                            </ul>
+                        </li>
+                    {% else %}
+                        <li class="nav-item">
+                            <a class="nav-link" href="{% url 'login' %}">
+                                <i class="bi bi-box-arrow-in-right"></i> Войти
+                            </a>
+                        </li>
+                    {% endif %}
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container mt-3 mt-md-4">
+        {% if messages %}
+            {% for message in messages %}
+                <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+
+        {% block content %}
+        {% endblock %}
+    </main>
+
+    <footer class="bg-light text-center py-3 mt-5">
+        <div class="container">
+            <p class="mb-0">&copy; 2025 Satva Wellness Booking System</p>
+        </div>
+    </footer>
+
+    <!-- Bootstrap 5 JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>
+

@@ -231,13 +231,15 @@ def get_specialists_for_service_view(request):
         return JsonResponse({'error': 'Вариант услуги не найден'}, status=404)
 
 
-@login_required
 @admin_required
 def get_available_cabinets_view(request):
     """
     Возвращает список доступных кабинетов для указанного времени, специалиста и услуги.
+    
+    Примечание: @admin_required уже проверяет авторизацию через request.user,
+    поэтому @login_required не нужен.
     """
-    logger.info(f"get_available_cabinets_view called: path={request.path}, method={request.method}")
+    logger.info(f"get_available_cabinets_view called: path={request.path}, method={request.method}, user={request.user}")
     service_variant_id = request.GET.get('service_variant_id')
     specialist_id = request.GET.get('specialist_id')
     datetime_str = request.GET.get('datetime')

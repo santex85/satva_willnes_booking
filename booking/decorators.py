@@ -3,6 +3,7 @@
 """
 from django.core.exceptions import PermissionDenied
 from django.http import JsonResponse
+from django.contrib.auth.views import redirect_to_login
 
 
 def group_required(*group_names):
@@ -19,6 +20,15 @@ def group_required(*group_names):
     """
     def decorator(view_func):
         def wrapper(request, *args, **kwargs):
+            # Проверяем авторизацию (request.user.is_authenticated проверяется автоматически Django)
+            if not request.user.is_authenticated:
+                # Для AJAX-запросов возвращаем JSON
+                if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.path.startswith('/api/'):
+                    return JsonResponse({'error': 'Требуется авторизация'}, status=401)
+                # Для обычных запросов - редирект на логин
+                return redirect_to_login(request.path)
+            
+            # Проверяем группы
             if request.user.groups.filter(name__in=group_names).exists() or request.user.is_superuser:
                 return view_func(request, *args, **kwargs)
             else:

@@ -6,16 +6,18 @@ from rest_framework_simplejwt.views import (
     TokenObtainPairView,
     TokenRefreshView,
 )
+import logging
 
 from . import views, api_views
+
+logger = logging.getLogger(__name__)
 
 # Явная проверка что функция доступна
 try:
     _available_cabinets_view = views.get_available_cabinets_view
+    logger.info(f"✓ get_available_cabinets_view imported successfully: {_available_cabinets_view}")
 except AttributeError as e:
-    import logging
-    logger = logging.getLogger(__name__)
-    logger.error(f"get_available_cabinets_view not found in views: {e}")
+    logger.error(f"✗ get_available_cabinets_view not found in views: {e}")
     raise
 
 urlpatterns = [

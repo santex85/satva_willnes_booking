@@ -136,4 +136,5 @@ if SENTRY_DSN:
         environment='production',
         release=os.environ.get('GIT_COMMIT_SHA', 'unknown'),
     )
-
+    
+TIME_ZONE = 'Asia/Bangkok'

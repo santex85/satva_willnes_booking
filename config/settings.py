@@ -211,3 +211,5 @@ SIMPLE_JWT = {
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
 }
+
+TIME_ZONE = 'Asia/Bangkok'

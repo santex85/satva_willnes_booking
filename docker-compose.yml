@@ -8,6 +8,7 @@ services:
       POSTGRES_DB: ${DATABASE_NAME:-satva_wellness_booking}
       POSTGRES_USER: ${DATABASE_USER:-postgres}
       POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-postgres}
+      TZ: Asia/Bangkok
     ports:
       - "5432:5432"
     healthcheck:
@@ -37,6 +38,7 @@ services:
       - DATABASE_PORT=5432
       - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
       - DJANGO_ALLOWED_HOSTS=${DJANGO_ALLOWED_HOSTS:-localhost}
+      - TZ=Asia/Bangkok
       - EMAIL_HOST=${EMAIL_HOST}
       - EMAIL_PORT=${EMAIL_PORT:-587}
       - EMAIL_USE_TLS=${EMAIL_USE_TLS:-True}

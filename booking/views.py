@@ -237,6 +237,7 @@ def get_available_cabinets_view(request):
     """
     Возвращает список доступных кабинетов для указанного времени, специалиста и услуги.
     """
+    logger.info(f"get_available_cabinets_view called: path={request.path}, method={request.method}")
     service_variant_id = request.GET.get('service_variant_id')
     specialist_id = request.GET.get('specialist_id')
     datetime_str = request.GET.get('datetime')

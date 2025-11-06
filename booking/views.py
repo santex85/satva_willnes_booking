@@ -231,6 +231,7 @@ def get_specialists_for_service_view(request):
         return JsonResponse({'error': 'Вариант услуги не найден'}, status=404)
 
 
+@login_required
 @admin_required
 def get_available_cabinets_view(request):
     """

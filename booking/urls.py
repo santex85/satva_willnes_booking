@@ -9,6 +9,15 @@ from rest_framework_simplejwt.views import (
 
 from . import views, api_views
 
+# Явная проверка что функция доступна
+try:
+    _available_cabinets_view = views.get_available_cabinets_view
+except AttributeError as e:
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.error(f"get_available_cabinets_view not found in views: {e}")
+    raise
+
 urlpatterns = [
     path('', views.index_view, name='index'),
     path('register/specialist/', views.specialist_register_view, name='specialist_register'),

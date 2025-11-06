@@ -31,7 +31,8 @@ urlpatterns = [
     path('calendar/resources/specialists/', views.specialist_resources_view, name='specialist_resources'),
     path('calendar/resources/cabinets/', views.cabinet_resources_view, name='cabinet_resources'),
     path('api/specialists-for-service/', views.get_specialists_for_service_view, name='specialists_for_service'),
-    path('api/available-cabinets/', views.get_available_cabinets_view, name='available_cabinets'),
+    # Явно указываем функцию для диагностики
+    path('api/available-cabinets/', _available_cabinets_view, name='available_cabinets'),
     path('select-service/', views.select_service_view, name='select_service'),
     path('select-slot/', views.select_slot_view, name='select_slot'),
     path('create-booking/', views.create_booking_view, name='create_booking'),

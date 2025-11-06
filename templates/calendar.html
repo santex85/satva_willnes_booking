@@ -359,6 +359,21 @@
         // Показываем модальное окно
         const modal = new bootstrap.Modal(document.getElementById('quickBookingModal'));
         modal.show();
+        
+        // Загружаем кабинеты автоматически при показе модального окна, если услуга и специалист уже выбраны
+        const modalElement = document.getElementById('quickBookingModal');
+        const handleModalShown = function() {
+            setTimeout(function() {
+                const serviceVariantId = document.getElementById('service_variant').value;
+                const specialistId = document.getElementById('specialist').value;
+                const startDatetime = document.getElementById('start_datetime').value;
+                
+                if (serviceVariantId && specialistId && startDatetime) {
+                    loadAvailableCabinets();
+                }
+            }, 100);
+        };
+        modalElement.addEventListener('shown.bs.modal', handleModalShown, { once: true });
     }
 
     function handleEventDrop(info) {

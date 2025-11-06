@@ -247,30 +247,59 @@ def get_available_cabinets_view(request):
         service_variant = get_object_or_404(ServiceVariant, id=service_variant_id)
         specialist = get_object_or_404(SpecialistProfile, id=specialist_id)
         
-        # Парсим datetime
-        start_datetime = timezone.datetime.fromisoformat(datetime_str)
-        if timezone.is_naive(start_datetime):
-            start_datetime = timezone.make_aware(start_datetime)
+        # Парсим datetime (формат: YYYY-MM-DDTHH:MM в локальном времени)
+        try:
+            # Парсим как naive datetime (локальное время)
+            naive_dt = datetime.datetime.strptime(datetime_str, '%Y-%m-%dT%H:%M')
+            # Делаем aware используя текущую timezone Django
+            start_datetime = timezone.make_aware(naive_dt)
+        except ValueError:
+            # Попробуем ISO формат
+            try:
+                start_datetime = timezone.datetime.fromisoformat(datetime_str.replace('Z', '+00:00'))
+                if timezone.is_naive(start_datetime):
+                    start_datetime = timezone.make_aware(start_datetime)
+            except ValueError:
+                return JsonResponse({'error': 'Неверный формат даты и времени'}, status=400)
         
         # Получаем доступные слоты для этой даты и услуги
-        date = start_datetime.date()
+        date = timezone.localtime(start_datetime).date()
         available_slots = find_available_slots(date, service_variant)
+        
+        # Конвертируем запрошенное время в локальное для сравнения
+        local_request = timezone.localtime(start_datetime)
         
         # Ищем слот с соответствующим временем и специалистом
         suitable_slot = None
+        min_diff = None
+        
         for slot in available_slots:
             slot_start = slot['start_time']
             local_slot = timezone.localtime(slot_start)
-            local_request = timezone.localtime(start_datetime)
             
-            if (slot['specialist'].id == specialist_id and
-                local_slot.year == local_request.year and
-                local_slot.month == local_request.month and
-                local_slot.day == local_request.day and
-                local_slot.hour == local_request.hour and
+            # Проверяем что это тот же специалист и тот же день
+            if slot['specialist'].id != specialist_id:
+                continue
+            
+            if (local_slot.year != local_request.year or
+                local_slot.month != local_request.month or
+                local_slot.day != local_request.day):
+                continue
+            
+            # Ищем точное совпадение по часам и минутам
+            if (local_slot.hour == local_request.hour and
                 local_slot.minute == local_request.minute):
                 suitable_slot = slot
                 break
+            
+            # Или ближайший доступный слот (не ранее запрошенного времени, но не более чем на 1 час позже)
+            if local_slot >= local_request:
+                diff = (local_slot - local_request).total_seconds()
+                # Ограничиваем поиск слотами в пределах 1 часа от запрошенного времени
+                if diff <= 3600:  # 1 час = 3600 секунд
+                    if min_diff is None or diff < min_diff:
+                        min_diff = diff
+                        suitable_slot = slot
         
         if not suitable_slot:
             return JsonResponse({'error': 'Слот не найден или недоступен'}, status=404)

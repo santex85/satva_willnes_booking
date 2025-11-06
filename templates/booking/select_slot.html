@@ -30,18 +30,33 @@
                         {% for slot in slots %}
                         <div class="col-12 col-sm-6 col-md-4 mb-2 mb-md-3">
                             <div class="form-check">
-                                <input class="form-check-input" type="radio" name="selected_slot"
+                                <input class="form-check-input slot-radio" type="radio" name="selected_slot"
                                        id="slot_{{ forloop.counter }}"
-                                       value="{{ slot.start_time|date:'Y-m-d\TH:i:s' }}|{{ slot.specialist.id }}|{{ slot.cabinet.id }}" required>
+                                       value="{{ slot.start_time|date:'Y-m-d\TH:i:s' }}|{{ slot.specialist.id }}"
+                                       data-slot-index="{{ forloop.counter0 }}" required>
                                 <label class="form-check-label card border-success" for="slot_{{ forloop.counter }}" style="cursor: pointer; width: 100%;">
                                     <div class="card-body">
                                         <strong><i class="bi bi-clock"></i> {{ slot.start_time|time:"H:i" }}</strong><br>
                                         <small class="text-muted">
                                             <i class="bi bi-person"></i> {{ slot.specialist.full_name }}<br>
-                                            <i class="bi bi-building"></i> {{ slot.cabinet.name }}
+                                            {% if slot.available_cabinets|length > 1 %}
+                                                <i class="bi bi-building"></i> Выберите кабинет ({{ slot.available_cabinets|length }} доступно)
+                                            {% else %}
+                                                <i class="bi bi-building"></i> {{ slot.cabinet.name }}
+                                            {% endif %}
                                         </small>
                                     </div>
                                 </label>
+                            </div>
+                            <!-- Выбор кабинета для этого слота -->
+                            <div class="cabinet-selection mt-2" id="cabinet_selection_{{ forloop.counter0 }}" style="display: none;">
+                                <label class="form-label small"><i class="bi bi-building"></i> Выберите кабинет:</label>
+                                <select class="form-select form-select-sm" name="cabinet_{{ forloop.counter0 }}" id="cabinet_{{ forloop.counter0 }}" required>
+                                    <option value="">-- Выберите кабинет --</option>
+                                    {% for cabinet in slot.available_cabinets %}
+                                    <option value="{{ cabinet.id }}">{{ cabinet.name }}</option>
+                                    {% endfor %}
+                                </select>
                             </div>
                         </div>
                         {% empty %}
@@ -98,5 +113,70 @@
     border-color: #28a745 !important;
 }
 </style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const slotRadios = document.querySelectorAll('.slot-radio');
+    const cabinetSelections = document.querySelectorAll('.cabinet-selection');
+    
+    // Скрываем все выборы кабинетов при загрузке
+    cabinetSelections.forEach(function(selection) {
+        selection.style.display = 'none';
+    });
+    
+    // Обработчик изменения выбора слота
+    slotRadios.forEach(function(radio) {
+        radio.addEventListener('change', function() {
+            // Скрываем все выборы кабинетов
+            cabinetSelections.forEach(function(selection) {
+                selection.style.display = 'none';
+                const select = selection.querySelector('select');
+                if (select) {
+                    select.removeAttribute('required');
+                }
+            });
+            
+            // Показываем выбор кабинета для выбранного слота
+            if (this.checked) {
+                const slotIndex = this.getAttribute('data-slot-index');
+                const cabinetSelection = document.getElementById('cabinet_selection_' + slotIndex);
+                if (cabinetSelection) {
+                    cabinetSelection.style.display = 'block';
+                    const select = cabinetSelection.querySelector('select');
+                    if (select) {
+                        select.setAttribute('required', 'required');
+                    }
+                }
+            }
+        });
+    });
+    
+    // Обработчик отправки формы - добавляем выбранный кабинет к значению слота
+    const form = document.querySelector('form');
+    form.addEventListener('submit', function(e) {
+        const selectedSlot = document.querySelector('.slot-radio:checked');
+        if (!selectedSlot) {
+            e.preventDefault();
+            alert('Пожалуйста, выберите время');
+            return false;
+        }
+        
+        const slotIndex = selectedSlot.getAttribute('data-slot-index');
+        const cabinetSelect = document.getElementById('cabinet_' + slotIndex);
+        
+        if (cabinetSelect && cabinetSelect.value) {
+            // Добавляем ID кабинета к значению слота
+            selectedSlot.value = selectedSlot.value + '|' + cabinetSelect.value;
+        } else if (cabinetSelect) {
+            // Проверяем, есть ли доступные кабинеты
+            if (cabinetSelect.options.length > 1) {
+                e.preventDefault();
+                alert('Пожалуйста, выберите кабинет');
+                return false;
+            }
+        }
+    });
+});
+</script>
 {% endblock %}
 

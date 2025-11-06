@@ -231,6 +231,65 @@ def get_specialists_for_service_view(request):
         return JsonResponse({'error': 'Вариант услуги не найден'}, status=404)
 
 
+@admin_required
+def get_available_cabinets_view(request):
+    """
+    Возвращает список доступных кабинетов для указанного времени, специалиста и услуги.
+    """
+    service_variant_id = request.GET.get('service_variant_id')
+    specialist_id = request.GET.get('specialist_id')
+    datetime_str = request.GET.get('datetime')
+    
+    if not service_variant_id or not specialist_id or not datetime_str:
+        return JsonResponse({'error': 'Не указаны обязательные параметры'}, status=400)
+    
+    try:
+        service_variant = get_object_or_404(ServiceVariant, id=service_variant_id)
+        specialist = get_object_or_404(SpecialistProfile, id=specialist_id)
+        
+        # Парсим datetime
+        start_datetime = timezone.datetime.fromisoformat(datetime_str)
+        if timezone.is_naive(start_datetime):
+            start_datetime = timezone.make_aware(start_datetime)
+        
+        # Получаем доступные слоты для этой даты и услуги
+        date = start_datetime.date()
+        available_slots = find_available_slots(date, service_variant)
+        
+        # Ищем слот с соответствующим временем и специалистом
+        suitable_slot = None
+        for slot in available_slots:
+            slot_start = slot['start_time']
+            local_slot = timezone.localtime(slot_start)
+            local_request = timezone.localtime(start_datetime)
+            
+            if (slot['specialist'].id == specialist_id and
+                local_slot.year == local_request.year and
+                local_slot.month == local_request.month and
+                local_slot.day == local_request.day and
+                local_slot.hour == local_request.hour and
+                local_slot.minute == local_request.minute):
+                suitable_slot = slot
+                break
+        
+        if not suitable_slot:
+            return JsonResponse({'error': 'Слот не найден или недоступен'}, status=404)
+        
+        # Получаем доступные кабинеты из слота
+        available_cabinets = suitable_slot.get('available_cabinets', [])
+        if not available_cabinets and suitable_slot.get('cabinet'):
+            # Для обратной совместимости
+            available_cabinets = [suitable_slot['cabinet']]
+        
+        cabinets_data = [{'id': cab.id, 'name': cab.name} for cab in available_cabinets]
+        
+        return JsonResponse({'cabinets': cabinets_data}, safe=False)
+        
+    except (ValueError, ServiceVariant.DoesNotExist, SpecialistProfile.DoesNotExist) as e:
+        logger.error(f"Error getting available cabinets: {e}", exc_info=True)
+        return JsonResponse({'error': 'Ошибка при получении доступных кабинетов'}, status=500)
+
+
 # Booking wizard views
 @admin_required
 def select_service_view(request):
@@ -282,7 +341,7 @@ def create_booking_view(request):
             return redirect('select_service')
         
         slot_data = selected_slot.split('|')
-        if len(slot_data) != 3:
+        if len(slot_data) < 2:
             raise ValueError("Invalid slot format")
         
         start_time = timezone.datetime.fromisoformat(slot_data[0])
@@ -290,9 +349,78 @@ def create_booking_view(request):
             start_time = timezone.make_aware(start_time)
         
         specialist_id = int(slot_data[1])
-        cabinet_id = int(slot_data[2])
-        service_variant_id = int(request.POST.get('service_variant'))
         
+        # Кабинет может быть в slot_data[2] или отсутствовать (для обратной совместимости)
+        if len(slot_data) >= 3:
+            cabinet_id = int(slot_data[2])
+        else:
+            # Если кабинет не указан, используем первый доступный из слота
+            # Это для обратной совместимости со старым форматом
+            service_variant_id = int(request.POST.get('service_variant'))
+            service_variant = get_object_or_404(ServiceVariant, id=service_variant_id)
+            date = start_time.date()
+            available_slots = find_available_slots(date, service_variant)
+            
+            # Ищем слот с соответствующим временем и специалистом
+            suitable_slot = None
+            for slot in available_slots:
+                if (slot['specialist'].id == specialist_id and 
+                    slot['start_time'] == start_time):
+                    suitable_slot = slot
+                    break
+            
+            if not suitable_slot:
+                raise ValueError("Slot not found")
+            
+            # Используем первый доступный кабинет
+            if suitable_slot.get('available_cabinets'):
+                cabinet_id = suitable_slot['available_cabinets'][0].id
+            elif suitable_slot.get('cabinet'):
+                cabinet_id = suitable_slot['cabinet'].id
+            else:
+                raise ValueError("No available cabinet")
+        
+        service_variant_id = int(request.POST.get('service_variant'))
+        service_variant = get_object_or_404(ServiceVariant, id=service_variant_id)
+        specialist = get_object_or_404(SpecialistProfile, id=specialist_id)
+        cabinet = get_object_or_404(Cabinet, id=cabinet_id)
+        
+        # Валидация: проверяем что кабинет подходит для услуги
+        service = service_variant.service
+        required_cabinet_types = service.required_cabinet_types.all()
+        if cabinet.cabinet_type not in required_cabinet_types:
+            messages.error(request, 'Выбранный кабинет не подходит для данной услуги')
+            return redirect('select_service')
+        
+        # Валидация: проверяем что кабинет свободен в выбранное время
+        date = start_time.date()
+        available_slots = find_available_slots(date, service_variant)
+        
+        # Ищем слот с соответствующим временем и специалистом
+        suitable_slot = None
+        for slot in available_slots:
+            if (slot['specialist'].id == specialist_id and 
+                slot['start_time'] == start_time):
+                suitable_slot = slot
+                break
+        
+        if not suitable_slot:
+            messages.error(request, 'Выбранный слот недоступен')
+            return redirect('select_service')
+        
+        # Проверяем что выбранный кабинет есть в списке доступных
+        available_cabinets = suitable_slot.get('available_cabinets', [])
+        if available_cabinets:
+            cabinet_ids = [cab.id for cab in available_cabinets]
+            if cabinet_id not in cabinet_ids:
+                messages.error(request, 'Выбранный кабинет недоступен для данного времени')
+                return redirect('select_service')
+        elif suitable_slot.get('cabinet') and suitable_slot['cabinet'].id != cabinet_id:
+            # Для обратной совместимости со старым форматом
+            messages.error(request, 'Выбранный кабинет недоступен для данного времени')
+            return redirect('select_service')
+        
+        # Создаем бронирование
         Booking.objects.create(
             guest_name=request.POST.get('guest_name'),
             guest_room_number=request.POST.get('guest_room_number'),
@@ -410,13 +538,53 @@ def quick_create_booking_view(request):
                 # Используем время из найденного слота (правильное время из графика)
                 final_start_time = suitable_slot['start_time']
                 
+                # Определяем кабинет
+                selected_cabinet = form.cleaned_data.get('cabinet')
+                if selected_cabinet:
+                    # Проверяем что выбранный кабинет доступен для этого слота
+                    available_cabinets = suitable_slot.get('available_cabinets', [])
+                    if available_cabinets:
+                        cabinet_ids = [cab.id for cab in available_cabinets]
+                        if selected_cabinet.id not in cabinet_ids:
+                            return JsonResponse({
+                                'error': 'Выбранный кабинет недоступен для данного времени'
+                            }, status=400)
+                        cabinet = selected_cabinet
+                    elif suitable_slot.get('cabinet'):
+                        # Для обратной совместимости со старым форматом
+                        if suitable_slot['cabinet'].id != selected_cabinet.id:
+                            return JsonResponse({
+                                'error': 'Выбранный кабинет недоступен для данного времени'
+                            }, status=400)
+                        cabinet = selected_cabinet
+                    else:
+                        cabinet = selected_cabinet
+                else:
+                    # Если кабинет не выбран, используем первый доступный из слота
+                    if suitable_slot.get('available_cabinets'):
+                        cabinet = suitable_slot['available_cabinets'][0]
+                    elif suitable_slot.get('cabinet'):
+                        cabinet = suitable_slot['cabinet']
+                    else:
+                        return JsonResponse({
+                            'error': 'Нет доступных кабинетов для данного времени'
+                        }, status=400)
+                
+                # Дополнительная валидация: проверяем что кабинет подходит для услуги
+                service = service_variant.service
+                required_cabinet_types = service.required_cabinet_types.all()
+                if cabinet.cabinet_type not in required_cabinet_types:
+                    return JsonResponse({
+                        'error': 'Выбранный кабинет не подходит для данной услуги'
+                    }, status=400)
+                
                 # Создаем бронирование
                 booking = Booking.objects.create(
                     guest_name=guest_name,
                     guest_room_number=guest_room_number,
                     service_variant=service_variant,
                     specialist=specialist,
-                    cabinet=suitable_slot['cabinet'],
+                    cabinet=cabinet,
                     start_time=final_start_time,
                     created_by=request.user,
                     status='confirmed'

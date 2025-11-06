@@ -171,6 +171,14 @@
                     </div>
 
                     <div class="mb-3">
+                        <label for="cabinet" class="form-label">Кабинет</label>
+                        <select class="form-select" id="cabinet" name="cabinet">
+                            <option value="">Сначала выберите услугу, специалиста и время</option>
+                        </select>
+                        <small class="form-text text-muted">Будет выбран автоматически, если не указан</small>
+                    </div>
+
+                    <div class="mb-3">
                         <label for="guest_name" class="form-label">Имя гостя *</label>
                         <input type="text" class="form-control" id="guest_name" name="guest_name" required>
                     </div>
@@ -346,6 +354,7 @@
         document.getElementById('quickBookingForm').reset();
         document.getElementById('start_datetime').value = localDateTime;
         document.getElementById('specialist').innerHTML = '<option value="">Сначала выберите услугу</option>';
+        document.getElementById('cabinet').innerHTML = '<option value="">Сначала выберите услугу, специалиста и время</option>';
 
         // Показываем модальное окно
         const modal = new bootstrap.Modal(document.getElementById('quickBookingModal'));
@@ -411,6 +420,51 @@
         }, 2000);
     }
 
+    // Функция загрузки доступных кабинетов
+    function loadAvailableCabinets() {
+        const serviceVariantId = document.getElementById('service_variant').value;
+        const specialistId = document.getElementById('specialist').value;
+        const startDatetime = document.getElementById('start_datetime').value;
+        const cabinetSelect = document.getElementById('cabinet');
+
+        if (!serviceVariantId || !specialistId || !startDatetime) {
+            cabinetSelect.innerHTML = '<option value="">Сначала выберите услугу, специалиста и время</option>';
+            return;
+        }
+
+        // Показываем загрузку
+        cabinetSelect.innerHTML = '<option value="">Загрузка...</option>';
+        cabinetSelect.disabled = true;
+
+        // Загружаем доступные кабинеты
+        fetch(`/api/available-cabinets/?service_variant_id=${serviceVariantId}&specialist_id=${specialistId}&datetime=${encodeURIComponent(startDatetime)}`)
+            .then(response => response.json())
+            .then(data => {
+                cabinetSelect.disabled = false;
+                if (data.error) {
+                    cabinetSelect.innerHTML = `<option value="">${data.error}</option>`;
+                    return;
+                }
+
+                cabinetSelect.innerHTML = '<option value="">-- Выберите кабинет (опционально) --</option>';
+                if (data.cabinets && data.cabinets.length > 0) {
+                    data.cabinets.forEach(cabinet => {
+                        const option = document.createElement('option');
+                        option.value = cabinet.id;
+                        option.textContent = cabinet.name;
+                        cabinetSelect.appendChild(option);
+                    });
+                } else {
+                    cabinetSelect.innerHTML = '<option value="">Нет доступных кабинетов</option>';
+                }
+            })
+            .catch(error => {
+                console.error('Error loading cabinets:', error);
+                cabinetSelect.disabled = false;
+                cabinetSelect.innerHTML = '<option value="">Ошибка загрузки</option>';
+            });
+    }
+
     // Загрузка специалистов при выборе услуги
     document.getElementById('service_variant').addEventListener('change', function() {
         const serviceVariantId = this.value;
@@ -418,6 +472,7 @@
 
         if (!serviceVariantId) {
             specialistSelect.innerHTML = '<option value="">Сначала выберите услугу</option>';
+            document.getElementById('cabinet').innerHTML = '<option value="">Сначала выберите услугу, специалиста и время</option>';
             return;
         }
 
@@ -435,11 +490,19 @@
                     option.textContent = specialist.full_name;
                     specialistSelect.appendChild(option);
                 });
+                
+                // Сбрасываем кабинеты
+                document.getElementById('cabinet').innerHTML = '<option value="">Сначала выберите специалиста и время</option>';
             })
             .catch(error => {
                 console.error('Error loading specialists:', error);
                 specialistSelect.innerHTML = '<option value="">Ошибка загрузки</option>';
             });
+    });
+
+    // Загрузка кабинетов при изменении специалиста
+    document.getElementById('specialist').addEventListener('change', function() {
+        loadAvailableCabinets();
     });
 
     // Обработка отправки формы

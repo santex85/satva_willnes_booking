@@ -35,6 +35,13 @@ class QuickBookingForm(forms.Form):
         widget=forms.Select(attrs={'class': 'form-select'}),
         required=True
     )
+    cabinet = forms.ModelChoiceField(
+        queryset=Cabinet.objects.filter(is_active=True),
+        label='Кабинет',
+        widget=forms.Select(attrs={'class': 'form-select'}),
+        required=False,  # Будет валидироваться динамически в view
+        empty_label='-- Выберите кабинет --'
+    )
     guest_name = forms.CharField(
         max_length=200,
         label='Имя гостя',

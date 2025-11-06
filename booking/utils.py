@@ -11,14 +11,17 @@ def find_available_slots(date: datetime.date, service_variant: ServiceVariant) -
     """
     Возвращает список словарей со свободными слотами.
     
-    Формат: [{'start_time': datetime, 'specialist': Specialist, 'cabinet': Cabinet}, ...]
+    Новый формат: [{'start_time': datetime, 'specialist': Specialist, 'available_cabinets': [Cabinet, ...]}, ...]
+    Старый формат (для обратной совместимости): [{'start_time': datetime, 'specialist': Specialist, 'cabinet': Cabinet}, ...]
+    
+    Для обратной совместимости, если в слоте есть 'available_cabinets', то 'cabinet' будет равен первому доступному кабинету.
     
     Args:
         date: Дата для поиска слотов
         service_variant: Вариант услуги, для которой ищем слоты
         
     Returns:
-        Список доступных слотов
+        Список доступных слотов с доступными кабинетами
     """
     
     # 1. Получаем все входные данные
@@ -57,6 +60,9 @@ def find_available_slots(date: datetime.date, service_variant: ServiceVariant) -
     time_increment = 15  # Шаг проверки
     available_slots = []
     
+    # Используем словарь для группировки слотов по времени и специалисту
+    slots_dict = {}
+    
     for schedule in schedules:
         specialist = schedule.specialist
         current_time = schedule.start_time
@@ -77,27 +83,52 @@ def find_available_slots(date: datetime.date, service_variant: ServiceVariant) -
             ).exists()
             
             if not is_specialist_busy:
-                # 7. Проверка: Свободен ли кабинет? (Логика Q.8)
+                # 7. Находим все доступные кабинеты для этого слота
                 # Находим кабинеты, занятые в этот слот КЕМ УГОДНО
                 busy_cabinets_ids = existing_bookings.filter(
                     start_time__lt=slot_datetime_end,
                     end_time__gt=slot_datetime_start
                 ).values_list('cabinet_id', flat=True)
                 
-                # Находим свободный кабинет нужного типа
-                available_cabinet = valid_cabinets.exclude(id__in=busy_cabinets_ids).first()
+                # Находим все свободные кабинеты нужного типа
+                available_cabinets = list(valid_cabinets.exclude(id__in=busy_cabinets_ids))
                 
-                if available_cabinet:
-                    # Слот найден!
-                    available_slots.append({
-                        'start_time': slot_datetime_start,
-                        'specialist': specialist,
-                        'cabinet': available_cabinet
-                    })
+                if available_cabinets:
+                    # Создаем ключ для группировки: время + специалист
+                    slot_key = (slot_datetime_start, specialist.id)
+                    
+                    # Если слот с таким временем и специалистом уже есть, объединяем кабинеты
+                    if slot_key in slots_dict:
+                        # Объединяем списки кабинетов, убирая дубликаты
+                        existing_cabinets = slots_dict[slot_key]['available_cabinets']
+                        all_cabinets = existing_cabinets + available_cabinets
+                        # Убираем дубликаты, сохраняя порядок
+                        unique_cabinets = []
+                        seen_ids = set()
+                        for cab in all_cabinets:
+                            if cab.id not in seen_ids:
+                                unique_cabinets.append(cab)
+                                seen_ids.add(cab.id)
+                        slots_dict[slot_key]['available_cabinets'] = unique_cabinets
+                    else:
+                        # Создаем новый слот
+                        slots_dict[slot_key] = {
+                            'start_time': slot_datetime_start,
+                            'specialist': specialist,
+                            'available_cabinets': available_cabinets,
+                            # Для обратной совместимости добавляем первый кабинет
+                            'cabinet': available_cabinets[0] if available_cabinets else None
+                        }
             
             # Двигаемся к следующему слоту
             slot_datetime_start += datetime.timedelta(minutes=time_increment)
             slot_datetime_end = slot_datetime_start + datetime.timedelta(minutes=total_slot_duration)
+    
+    # Конвертируем словарь в список
+    available_slots = list(slots_dict.values())
+    
+    # Сортируем по времени начала
+    available_slots.sort(key=lambda x: x['start_time'])
     
     return available_slots
 

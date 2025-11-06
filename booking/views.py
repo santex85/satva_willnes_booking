@@ -241,6 +241,7 @@ def get_available_cabinets_view(request):
     datetime_str = request.GET.get('datetime')
     
     if not service_variant_id or not specialist_id or not datetime_str:
+        logger.warning(f"Missing parameters: service_variant_id={service_variant_id}, specialist_id={specialist_id}, datetime={datetime_str}")
         return JsonResponse({'error': 'Не указаны обязательные параметры'}, status=400)
     
     try:
@@ -260,11 +261,14 @@ def get_available_cabinets_view(request):
                 if timezone.is_naive(start_datetime):
                     start_datetime = timezone.make_aware(start_datetime)
             except ValueError:
+                logger.warning(f"Invalid datetime format: {datetime_str}")
                 return JsonResponse({'error': 'Неверный формат даты и времени'}, status=400)
         
         # Получаем доступные слоты для этой даты и услуги
         date = timezone.localtime(start_datetime).date()
         available_slots = find_available_slots(date, service_variant)
+        
+        logger.debug(f"Found {len(available_slots)} available slots for date {date}, service_variant {service_variant_id}, specialist {specialist_id}")
         
         # Конвертируем запрошенное время в локальное для сравнения
         local_request = timezone.localtime(start_datetime)
@@ -278,7 +282,7 @@ def get_available_cabinets_view(request):
             local_slot = timezone.localtime(slot_start)
             
             # Проверяем что это тот же специалист и тот же день
-            if slot['specialist'].id != specialist_id:
+            if slot['specialist'].id != int(specialist_id):
                 continue
             
             if (local_slot.year != local_request.year or
@@ -290,6 +294,7 @@ def get_available_cabinets_view(request):
             if (local_slot.hour == local_request.hour and
                 local_slot.minute == local_request.minute):
                 suitable_slot = slot
+                logger.debug(f"Found exact match slot: {local_slot}")
                 break
             
             # Или ближайший доступный слот (не ранее запрошенного времени, но не более чем на 1 час позже)
@@ -302,6 +307,10 @@ def get_available_cabinets_view(request):
                         suitable_slot = slot
         
         if not suitable_slot:
+            logger.warning(f"No suitable slot found for specialist {specialist_id}, datetime {datetime_str}, available slots: {len(available_slots)}")
+            # Логируем доступные слоты для этого специалиста для отладки
+            specialist_slots = [s for s in available_slots if s['specialist'].id == int(specialist_id)]
+            logger.debug(f"Slots for specialist {specialist_id}: {[(timezone.localtime(s['start_time']).strftime('%Y-%m-%d %H:%M'), len(s.get('available_cabinets', []))) for s in specialist_slots[:5]]}")
             return JsonResponse({'error': 'Слот не найден или недоступен'}, status=404)
         
         # Получаем доступные кабинеты из слота
@@ -312,6 +321,7 @@ def get_available_cabinets_view(request):
         
         cabinets_data = [{'id': cab.id, 'name': cab.name} for cab in available_cabinets]
         
+        logger.debug(f"Returning {len(cabinets_data)} available cabinets for slot")
         return JsonResponse({'cabinets': cabinets_data}, safe=False)
         
     except (ValueError, ServiceVariant.DoesNotExist, SpecialistProfile.DoesNotExist) as e:

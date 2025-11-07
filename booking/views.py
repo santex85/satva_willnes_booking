@@ -77,18 +77,50 @@ def calendar_view(request):
 @specialist_required
 def my_schedule_view(request):
     """
-    Страница графика для специалистов - показываем бронирования на сегодня.
+    Страница графика для специалистов - показываем бронирования на неделю.
     """
     specialist = get_object_or_404(SpecialistProfile, user=request.user)
     today = datetime.date.today()
     
+    # Получаем бронирования на неделю вперед (7 дней)
+    week_end = today + datetime.timedelta(days=6)
+    
+    # Получаем все бронирования на неделю
     bookings = Booking.objects.filter(
         specialist=specialist,
-        start_time__date=today,
+        start_time__date__range=[today, week_end],
         status='confirmed'
     ).order_by('start_time')
     
-    return render(request, 'specialist_schedule.html', {'bookings': bookings, 'specialist': specialist})
+    # Группируем бронирования по дням
+    bookings_by_date = {}
+    for booking in bookings:
+        booking_date = timezone.localtime(booking.start_time).date()
+        if booking_date not in bookings_by_date:
+            bookings_by_date[booking_date] = []
+        bookings_by_date[booking_date].append(booking)
+    
+    # Создаем список дней недели с бронированиями
+    week_days = []
+    for i in range(7):
+        day = today + datetime.timedelta(days=i)
+        day_bookings = bookings_by_date.get(day, [])
+        week_days.append({
+            'date': day,
+            'bookings': day_bookings,
+            'is_today': day == today
+        })
+    
+    # Подсчитываем общее количество бронирований
+    total_bookings = bookings.count()
+    
+    return render(request, 'specialist_schedule.html', {
+        'week_days': week_days,
+        'today': today,
+        'week_end': week_end,
+        'total_bookings': total_bookings,
+        'specialist': specialist
+    })
 
 
 # Calendar feed and resources

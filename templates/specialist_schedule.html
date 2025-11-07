@@ -1,48 +1,84 @@
 {% extends 'base.html' %}
+{% load l10n %}
 
 {% block title %}Мой график{% endblock %}
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3 mb-md-4">
-    <h1 class="h3"><i class="bi bi-clock-history"></i> <span class="d-none d-sm-inline">Мой график на сегодня</span><span class="d-sm-none">График</span></h1>
+    <h1 class="h3"><i class="bi bi-clock-history"></i> Мой график на неделю</h1>
 </div>
 
 <div class="alert alert-info">
     <i class="bi bi-calendar"></i>
-    <strong>{{ bookings|length }}</strong> бронирований на сегодня
+    <strong>{{ total_bookings }}</strong> бронирований с {{ today|date:"d.m.Y" }} по {{ week_end|date:"d.m.Y" }}
 </div>
 
-{% if bookings %}
-<div class="card">
-    <div class="card-body">
-        <div class="list-group">
-            {% for booking in bookings %}
-            <div class="list-group-item">
-                <div class="d-flex w-100 justify-content-between">
-                    <h5 class="mb-1">
-                        <i class="bi bi-person"></i> {{ booking.guest_name }}
-                        {% if booking.guest_room_number %}
-                            <span class="badge bg-secondary">Комната {{ booking.guest_room_number }}</span>
+{% if total_bookings > 0 %}
+<div class="row g-3">
+    {% for day_info in week_days %}
+    <div class="col-12 col-md-6 col-lg-4">
+        <div class="card h-100 {% if day_info.is_today %}border-primary{% endif %}">
+            <div class="card-header {% if day_info.is_today %}bg-primary text-white{% else %}bg-light{% endif %}">
+                <h5 class="mb-0">
+                    {% if day_info.is_today %}
+                        <i class="bi bi-calendar-check"></i> Сегодня
+                    {% else %}
+                        <i class="bi bi-calendar"></i> 
+                        {% if day_info.date.weekday == 0 %}Понедельник
+                        {% elif day_info.date.weekday == 1 %}Вторник
+                        {% elif day_info.date.weekday == 2 %}Среда
+                        {% elif day_info.date.weekday == 3 %}Четверг
+                        {% elif day_info.date.weekday == 4 %}Пятница
+                        {% elif day_info.date.weekday == 5 %}Суббота
+                        {% elif day_info.date.weekday == 6 %}Воскресенье
                         {% endif %}
-                    </h5>
-                    <small class="text-muted">{{ booking.start_time|time:"H:i" }} - {{ booking.end_time|time:"H:i" }}</small>
-                </div>
-                <p class="mb-1">
-                    <i class="bi bi-heart-pulse"></i> {{ booking.service_variant.service.name }} - {{ booking.service_variant.name_suffix }}
-                </p>
-                <p class="mb-0">
-                    <i class="bi bi-building"></i> {{ booking.cabinet.name }}
-                </p>
+                    {% endif %}
+                    <small class="ms-2">{{ day_info.date|date:"d.m.Y" }}</small>
+                    <span class="badge {% if day_info.is_today %}bg-light text-primary{% else %}bg-secondary{% endif %} ms-2">
+                        {{ day_info.bookings|length }}
+                    </span>
+                </h5>
             </div>
-            {% endfor %}
+            <div class="card-body">
+                {% if day_info.bookings %}
+                <div class="list-group list-group-flush">
+                    {% for booking in day_info.bookings %}
+                    <div class="list-group-item px-0 py-2">
+                        <div class="d-flex w-100 justify-content-between align-items-start mb-1">
+                            <h6 class="mb-0">
+                                <i class="bi bi-person"></i> {{ booking.guest_name }}
+                                {% if booking.guest_room_number %}
+                                    <span class="badge bg-secondary ms-1">{{ booking.guest_room_number }}</span>
+                                {% endif %}
+                            </h6>
+                            <small class="text-muted">
+                                <strong>{{ booking.start_time|time:"H:i" }}</strong> - {{ booking.end_time|time:"H:i" }}
+                            </small>
+                        </div>
+                        <p class="mb-1 small">
+                            <i class="bi bi-heart-pulse"></i> {{ booking.service_variant.service.name }} - {{ booking.service_variant.name_suffix }}
+                        </p>
+                        <p class="mb-0 small text-muted">
+                            <i class="bi bi-building"></i> {{ booking.cabinet.name }}
+                        </p>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-muted text-center mb-0">
+                    <i class="bi bi-calendar-x"></i> Нет бронирований
+                </p>
+                {% endif %}
+            </div>
         </div>
     </div>
+    {% endfor %}
 </div>
 {% else %}
 <div class="card">
     <div class="card-body text-center">
         <i class="bi bi-calendar-x" style="font-size: 4rem; color: #6c757d;"></i>
-        <p class="mt-3 mb-0">На сегодня нет запланированных бронирований</p>
+        <p class="mt-3 mb-0">На эту неделю нет запланированных бронирований</p>
     </div>
 </div>
 {% endif %}

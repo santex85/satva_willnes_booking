@@ -1,0 +1,91 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls static admin_modify %}
+
+{% block title %}{{ title }} | {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+<a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
+&rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+&rsaquo; <a href="{% url 'admin:booking_specialistschedule_changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a>
+&rsaquo; {{ title }}
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="content">
+    <h1>{{ title }}</h1>
+    
+    <div class="module">
+        <div style="margin-bottom: 20px;">
+            <a href="{% url 'admin:booking_specialistschedule_changelist' %}" class="button">← Вернуться к списку</a>
+        </div>
+        
+        <table id="schedule-week-view" style="width: 100%; border-collapse: collapse;">
+            <thead>
+                <tr>
+                    <th style="padding: 10px; background-color: #417690; color: white; text-align: left; border: 1px solid #ddd;">
+                        Специалист
+                    </th>
+                    {% for day_value, day_name in days_of_week %}
+                    <th style="padding: 10px; background-color: #417690; color: white; text-align: center; border: 1px solid #ddd; min-width: 120px;">
+                        {{ day_name }}
+                    </th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in schedule_data %}
+                <tr>
+                    <td style="padding: 10px; border: 1px solid #ddd; background-color: #f8f9fa; font-weight: bold;">
+                        <a href="{% url 'admin:booking_specialistprofile_change' row.specialist.id %}">
+                            {{ row.specialist.full_name }}
+                        </a>
+                    </td>
+                    {% for day_info in row.days %}
+                    <td style="padding: 10px; border: 1px solid #ddd; text-align: center; vertical-align: middle;">
+                        {% if day_info.schedule %}
+                            <div style="background-color: #d4edda; padding: 8px; border-radius: 4px; border: 1px solid #c3e6cb;">
+                                <strong>{{ day_info.schedule.start_time|time:"H:i" }}</strong> - 
+                                <strong>{{ day_info.schedule.end_time|time:"H:i" }}</strong>
+                                <br>
+                                <a href="{% url 'admin:booking_specialistschedule_change' day_info.schedule.id %}" 
+                                   style="font-size: 11px; color: #155724;">
+                                    Редактировать
+                                </a>
+                            </div>
+                        {% else %}
+                            <div style="color: #6c757d; font-style: italic;">
+                                Нет расписания
+                                <br>
+                                <a href="{% url 'admin:booking_specialistprofile_change' row.specialist.id %}" 
+                                   style="font-size: 11px; color: #417690;">
+                                    Добавить
+                                </a>
+                            </div>
+                        {% endif %}
+                    </td>
+                    {% endfor %}
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="8" style="padding: 20px; text-align: center; color: #6c757d;">
+                        Нет специалистов
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<style>
+#schedule-week-view {
+    margin-top: 20px;
+}
+#schedule-week-view tbody tr:hover {
+    background-color: #f1f1f1;
+}
+</style>
+{% endblock %}
+

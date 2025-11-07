@@ -172,6 +172,80 @@ class SpecialistSchedule(models.Model):
         return f"{self.specialist.full_name} - {day_name} ({self.start_time}-{self.end_time})"
 
 
+class ScheduleTemplate(models.Model):
+    """Шаблон расписания для применения к специалистам"""
+    name = models.CharField(
+        max_length=200,
+        verbose_name='Название шаблона',
+        help_text='Например: "Стандартное полное рабочее время", "Выходные дни"'
+    )
+    description = models.TextField(
+        blank=True,
+        verbose_name='Описание',
+        help_text='Описание шаблона расписания'
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name='Создано'
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name='Обновлено'
+    )
+
+    class Meta:
+        verbose_name = 'Шаблон расписания'
+        verbose_name_plural = 'Шаблоны расписания'
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+    def apply_to_specialist(self, specialist):
+        """
+        Применить шаблон к специалисту.
+        Создает или обновляет записи SpecialistSchedule для дней, указанных в шаблоне.
+        """
+        for template_day in self.days.all():
+            schedule, created = SpecialistSchedule.objects.update_or_create(
+                specialist=specialist,
+                day_of_week=template_day.day_of_week,
+                defaults={
+                    'start_time': template_day.start_time,
+                    'end_time': template_day.end_time,
+                }
+            )
+        return self.days.count()
+
+
+class ScheduleTemplateDay(models.Model):
+    """День недели в шаблоне расписания"""
+    DAYS_OF_WEEK = SpecialistSchedule.DAYS_OF_WEEK
+
+    template = models.ForeignKey(
+        ScheduleTemplate,
+        on_delete=models.CASCADE,
+        related_name='days',
+        verbose_name='Шаблон'
+    )
+    day_of_week = models.IntegerField(
+        choices=DAYS_OF_WEEK,
+        verbose_name='День недели'
+    )
+    start_time = models.TimeField(verbose_name='Начало работы')
+    end_time = models.TimeField(verbose_name='Окончание работы')
+
+    class Meta:
+        verbose_name = 'День шаблона'
+        verbose_name_plural = 'Дни шаблона'
+        unique_together = ('template', 'day_of_week')
+        ordering = ['day_of_week']
+
+    def __str__(self):
+        day_name = dict(self.DAYS_OF_WEEK)[self.day_of_week]
+        return f"{self.template.name} - {day_name} ({self.start_time}-{self.end_time})"
+
+
 class Booking(models.Model):
     """Бронирование"""
     STATUS_CHOICES = [

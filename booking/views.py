@@ -13,7 +13,7 @@ import datetime
 import logging
 
 from django.contrib.auth.models import User, Group
-from .models import Booking, SpecialistProfile, Cabinet, ServiceVariant, SpecialistSchedule
+from .models import Booking, SpecialistProfile, Cabinet, ServiceVariant, SpecialistSchedule, ScheduleTemplate
 from .decorators import admin_required, specialist_required
 from .utils import find_available_slots, check_booking_conflicts
 from .forms import SelectServiceForm, SpecialistScheduleForm, ReportForm, BookingEditForm, QuickBookingForm, SpecialistRegistrationForm
@@ -855,6 +855,7 @@ def manage_schedules_view(request):
             formset.save_m2m()
             for obj in formset.deleted_objects:
                 obj.delete()
+            messages.success(request, 'Расписание успешно сохранено')
             return redirect(f'manage_schedules?specialist={specialist.id}')
     else:
         if specialist:
@@ -862,11 +863,99 @@ def manage_schedules_view(request):
         else:
             formset = SpecialistScheduleFormSet(queryset=SpecialistSchedule.objects.none())
     
+    # Загружаем шаблоны для отображения
+    from .models import ScheduleTemplate
+    templates = ScheduleTemplate.objects.all()
+    
     return render(request, 'booking/manage_schedules.html', {
         'formset': formset,
         'specialists': SpecialistProfile.objects.all(),
-        'selected_specialist': specialist
+        'selected_specialist': specialist,
+        'templates': templates
     })
+
+
+@admin_required
+def copy_schedule_view(request):
+    """
+    Копирование расписания от одного специалиста к другому.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Только POST запросы'}, status=405)
+    
+    source_specialist_id = request.POST.get('source_specialist_id')
+    target_specialist_id = request.POST.get('target_specialist_id')
+    
+    if not source_specialist_id or not target_specialist_id:
+        return JsonResponse({'error': 'Не указаны специалисты'}, status=400)
+    
+    if source_specialist_id == target_specialist_id:
+        return JsonResponse({'error': 'Нельзя копировать расписание к самому себе'}, status=400)
+    
+    try:
+        source_specialist = get_object_or_404(SpecialistProfile, id=source_specialist_id)
+        target_specialist = get_object_or_404(SpecialistProfile, id=target_specialist_id)
+        
+        # Получаем все расписания исходного специалиста
+        source_schedules = SpecialistSchedule.objects.filter(specialist=source_specialist)
+        
+        copied_count = 0
+        for source_schedule in source_schedules:
+            # Создаем или обновляем расписание целевого специалиста
+            schedule, created = SpecialistSchedule.objects.update_or_create(
+                specialist=target_specialist,
+                day_of_week=source_schedule.day_of_week,
+                defaults={
+                    'start_time': source_schedule.start_time,
+                    'end_time': source_schedule.end_time,
+                }
+            )
+            if created or schedule.start_time != source_schedule.start_time or schedule.end_time != source_schedule.end_time:
+                copied_count += 1
+        
+        logger.info(f"Schedule copied from {source_specialist.full_name} to {target_specialist.full_name}, {copied_count} days copied")
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'Расписание успешно скопировано ({copied_count} дней)'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error copying schedule: {e}", exc_info=True)
+        return JsonResponse({'error': 'Ошибка при копировании расписания'}, status=500)
+
+
+@admin_required
+def apply_template_view(request):
+    """
+    Применение шаблона расписания к специалисту.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Только POST запросы'}, status=405)
+    
+    specialist_id = request.POST.get('specialist_id')
+    template_id = request.POST.get('template_id')
+    
+    if not specialist_id or not template_id:
+        return JsonResponse({'error': 'Не указаны специалист или шаблон'}, status=400)
+    
+    try:
+        specialist = get_object_or_404(SpecialistProfile, id=specialist_id)
+        template = get_object_or_404(ScheduleTemplate, id=template_id)
+        
+        # Применяем шаблон к специалисту
+        applied_count = template.apply_to_specialist(specialist)
+        
+        logger.info(f"Template '{template.name}' applied to {specialist.full_name}, {applied_count} days applied")
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'Шаблон "{template.name}" успешно применен ({applied_count} дней)'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error applying template: {e}", exc_info=True)
+        return JsonResponse({'error': 'Ошибка при применении шаблона'}, status=500)
 
 
 # Reports view

@@ -72,6 +72,19 @@ class SpecialistScheduleForm(forms.ModelForm):
             'start_time': forms.TimeInput(attrs={'type': 'time', 'class': 'form-control'}),
             'end_time': forms.TimeInput(attrs={'type': 'time', 'class': 'form-control'}),
         }
+    
+    def clean(self):
+        cleaned_data = super().clean()
+        start_time = cleaned_data.get('start_time')
+        end_time = cleaned_data.get('end_time')
+        
+        if start_time and end_time:
+            if start_time >= end_time:
+                raise forms.ValidationError({
+                    'end_time': 'Время окончания должно быть больше времени начала'
+                })
+        
+        return cleaned_data
 
 
 class ReportForm(forms.Form):

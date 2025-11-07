@@ -31,9 +31,40 @@
 </div>
 
 {% if selected_specialist %}
+<!-- Действия с расписанием -->
+<div class="card mb-3">
+    <div class="card-body">
+        <div class="row g-2">
+            <div class="col-12 col-md-4">
+                <button type="button" class="btn btn-outline-primary w-100" data-bs-toggle="modal" data-bs-target="#copyScheduleModal">
+                    <i class="bi bi-copy"></i> Копировать расписание
+                </button>
+            </div>
+            <div class="col-12 col-md-4">
+                <button type="button" class="btn btn-outline-info w-100" data-bs-toggle="modal" data-bs-target="#applyTemplateModal">
+                    <i class="bi bi-file-earmark-text"></i> Применить шаблон
+                </button>
+            </div>
+            <div class="col-12 col-md-4">
+                <button type="button" class="btn btn-outline-warning w-100" onclick="clearSelectedDays()">
+                    <i class="bi bi-x-circle"></i> Очистить выбранные дни
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="card">
-    <div class="card-header bg-primary text-white">
+    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
         <h4 class="mb-0 h5"><i class="bi bi-person-circle"></i> График работы: {{ selected_specialist.full_name }}</h4>
+        <div>
+            <button type="button" class="btn btn-sm btn-light" onclick="selectAllDays()">
+                <i class="bi bi-check-square"></i> Выбрать все
+            </button>
+            <button type="button" class="btn btn-sm btn-light ms-2" onclick="applyTimeToSelected()">
+                <i class="bi bi-clock"></i> Применить время
+            </button>
+        </div>
     </div>
     <div class="card-body">
         {% if formset.errors %}
@@ -42,7 +73,7 @@
         </div>
         {% endif %}
 
-        <form method="POST">
+        <form method="POST" id="scheduleForm">
             {% csrf_token %}
             <input type="hidden" name="specialist" value="{{ selected_specialist.id }}">
             {{ formset.management_form }}
@@ -51,15 +82,21 @@
                 <table class="table table-bordered table-hover">
                     <thead class="table-light">
                         <tr>
+                            <th style="width: 5%;">
+                                <input type="checkbox" id="selectAll" onchange="toggleAllDays(this)">
+                            </th>
                             <th style="width: 5%;">Удалить</th>
-                            <th style="width: 30%;">День недели</th>
+                            <th style="width: 25%;">День недели</th>
                             <th style="width: 32.5%;">Начало работы</th>
                             <th style="width: 32.5%;">Окончание работы</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for form in formset %}
-                        <tr>
+                        <tr class="schedule-row" data-day-index="{{ forloop.counter0 }}">
+                            <td class="text-center">
+                                <input type="checkbox" class="day-checkbox" value="{{ forloop.counter0 }}">
+                            </td>
                             <td class="text-center">
                                 {% if form.DELETE %}
                                     {{ form.DELETE }}
@@ -67,8 +104,18 @@
                                 {{ form.id }}
                             </td>
                             <td>{{ form.day_of_week }}</td>
-                            <td>{{ form.start_time }}</td>
-                            <td>{{ form.end_time }}</td>
+                            <td>
+                                {{ form.start_time }}
+                                {% if form.start_time.errors %}
+                                    <div class="text-danger small">{{ form.start_time.errors }}</div>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {{ form.end_time }}
+                                {% if form.end_time.errors %}
+                                    <div class="text-danger small">{{ form.end_time.errors }}</div>
+                                {% endif %}
+                            </td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -86,6 +133,266 @@
         </form>
     </div>
 </div>
+
+<!-- Модальное окно для копирования расписания -->
+<div class="modal fade" id="copyScheduleModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-copy"></i> Копировать расписание</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Выберите специалиста, у которого нужно скопировать расписание:</p>
+                <select class="form-select" id="sourceSpecialistSelect">
+                    <option value="">-- Выберите специалиста --</option>
+                    {% for spec in specialists %}
+                        {% if spec.id != selected_specialist.id %}
+                        <option value="{{ spec.id }}">{{ spec.full_name }}</option>
+                        {% endif %}
+                    {% endfor %}
+                </select>
+                <div class="mt-3">
+                    <strong>Копировать к:</strong> {{ selected_specialist.full_name }}
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                <button type="button" class="btn btn-primary" onclick="copySchedule()">
+                    <i class="bi bi-copy"></i> Копировать
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Модальное окно для применения шаблона -->
+<div class="modal fade" id="applyTemplateModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-file-earmark-text"></i> Применить шаблон</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Выберите шаблон расписания для применения:</p>
+                <select class="form-select" id="templateSelect">
+                    <option value="">-- Выберите шаблон --</option>
+                    {% for template in templates %}
+                    <option value="{{ template.id }}">{{ template.name }}</option>
+                    {% endfor %}
+                </select>
+                {% if not templates %}
+                <div class="alert alert-info mt-2">
+                    <i class="bi bi-info-circle"></i> Нет доступных шаблонов. Создайте шаблон в <a href="{% url 'admin:booking_scheduletemplate_changelist' %}" target="_blank">админ-панели</a>.
+                </div>
+                {% endif %}
+                <div class="mt-3">
+                    <strong>Применить к:</strong> {{ selected_specialist.full_name }}
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                <button type="button" class="btn btn-primary" onclick="applyTemplate()" {% if not templates %}disabled{% endif %}>
+                    <i class="bi bi-check-circle"></i> Применить
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Модальное окно для применения времени к выбранным дням -->
+<div class="modal fade" id="applyTimeModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-clock"></i> Применить время к выбранным дням</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label for="bulkStartTime" class="form-label">Начало работы</label>
+                    <input type="time" class="form-control" id="bulkStartTime" required>
+                </div>
+                <div class="mb-3">
+                    <label for="bulkEndTime" class="form-label">Окончание работы</label>
+                    <input type="time" class="form-control" id="bulkEndTime" required>
+                </div>
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle"></i> Время будет применено ко всем выбранным дням.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                <button type="button" class="btn btn-primary" onclick="confirmApplyTime()">
+                    <i class="bi bi-check-circle"></i> Применить
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function toggleAllDays(checkbox) {
+    const checkboxes = document.querySelectorAll('.day-checkbox');
+    checkboxes.forEach(cb => cb.checked = checkbox.checked);
+}
+
+function selectAllDays() {
+    const checkboxes = document.querySelectorAll('.day-checkbox');
+    checkboxes.forEach(cb => cb.checked = true);
+    document.getElementById('selectAll').checked = true;
+}
+
+function getSelectedDays() {
+    const checkboxes = document.querySelectorAll('.day-checkbox:checked');
+    return Array.from(checkboxes).map(cb => parseInt(cb.value));
+}
+
+function applyTimeToSelected() {
+    const selectedDays = getSelectedDays();
+    if (selectedDays.length === 0) {
+        alert('Выберите хотя бы один день');
+        return;
+    }
+    const modal = new bootstrap.Modal(document.getElementById('applyTimeModal'));
+    modal.show();
+}
+
+function confirmApplyTime() {
+    const startTime = document.getElementById('bulkStartTime').value;
+    const endTime = document.getElementById('bulkEndTime').value;
+    
+    if (!startTime || !endTime) {
+        alert('Укажите время начала и окончания');
+        return;
+    }
+    
+    if (startTime >= endTime) {
+        alert('Время начала должно быть меньше времени окончания');
+        return;
+    }
+    
+    const selectedDays = getSelectedDays();
+    selectedDays.forEach(dayIndex => {
+        const row = document.querySelector(`tr[data-day-index="${dayIndex}"]`);
+        if (row) {
+            const startInput = row.querySelector('input[name$="-start_time"]');
+            const endInput = row.querySelector('input[name$="-end_time"]');
+            if (startInput) startInput.value = startTime;
+            if (endInput) endInput.value = endTime;
+        }
+    });
+    
+    bootstrap.Modal.getInstance(document.getElementById('applyTimeModal')).hide();
+    alert(`Время применено к ${selectedDays.length} дням`);
+}
+
+function clearSelectedDays() {
+    const selectedDays = getSelectedDays();
+    if (selectedDays.length === 0) {
+        alert('Нет выбранных дней');
+        return;
+    }
+    
+    if (!confirm(`Очистить расписание для ${selectedDays.length} выбранных дней?`)) {
+        return;
+    }
+    
+    selectedDays.forEach(dayIndex => {
+        const row = document.querySelector(`tr[data-day-index="${dayIndex}"]`);
+        if (row) {
+            const deleteCheckbox = row.querySelector('input[name$="-DELETE"]');
+            if (deleteCheckbox) {
+                deleteCheckbox.checked = true;
+            }
+            const startInput = row.querySelector('input[name$="-start_time"]');
+            const endInput = row.querySelector('input[name$="-end_time"]');
+            if (startInput) startInput.value = '';
+            if (endInput) endInput.value = '';
+        }
+    });
+    
+    alert(`Расписание очищено для ${selectedDays.length} дней`);
+}
+
+function copySchedule() {
+    const sourceId = document.getElementById('sourceSpecialistSelect').value;
+    const targetId = {{ selected_specialist.id }};
+    
+    if (!sourceId) {
+        alert('Выберите специалиста для копирования');
+        return;
+    }
+    
+    if (sourceId == targetId) {
+        alert('Нельзя копировать расписание к самому себе');
+        return;
+    }
+    
+    const formData = new FormData();
+    formData.append('source_specialist_id', sourceId);
+    formData.append('target_specialist_id', targetId);
+    formData.append('csrfmiddlewaretoken', document.querySelector('[name=csrfmiddlewaretoken]').value);
+    
+    fetch('{% url "copy_schedule" %}', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert(data.message);
+            bootstrap.Modal.getInstance(document.getElementById('copyScheduleModal')).hide();
+            location.reload();
+        } else {
+            alert('Ошибка: ' + (data.error || 'Неизвестная ошибка'));
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Ошибка при копировании расписания');
+    });
+}
+
+function applyTemplate() {
+    const templateId = document.getElementById('templateSelect').value;
+    const specialistId = {{ selected_specialist.id }};
+    
+    if (!templateId) {
+        alert('Выберите шаблон');
+        return;
+    }
+    
+    if (!confirm('Применить шаблон? Существующее расписание для дней из шаблона будет обновлено.')) {
+        return;
+    }
+    
+    const formData = new FormData();
+    formData.append('template_id', templateId);
+    formData.append('specialist_id', specialistId);
+    formData.append('csrfmiddlewaretoken', document.querySelector('[name=csrfmiddlewaretoken]').value);
+    
+    fetch('{% url "apply_template" %}', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert(data.message);
+            bootstrap.Modal.getInstance(document.getElementById('applyTemplateModal')).hide();
+            location.reload();
+        } else {
+            alert('Ошибка: ' + (data.error || 'Неизвестная ошибка'));
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Ошибка при применении шаблона');
+    });
+}
+</script>
 {% else %}
 <div class="card">
     <div class="card-body text-center">

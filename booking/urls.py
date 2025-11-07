@@ -30,6 +30,8 @@ urlpatterns = [
     path('booking/<int:pk>/validate/', views.validate_booking_edit_view, name='validate_booking_edit'),
     path('booking/<int:pk>/delete/', views.BookingDeleteView.as_view(), name='booking_delete'),
     path('manage-schedules/', views.manage_schedules_view, name='manage_schedules'),
+    path('schedules/copy/', views.copy_schedule_view, name='copy_schedule'),
+    path('schedules/apply-template/', views.apply_template_view, name='apply_template'),
     path('reports/', views.reports_view, name='reports'),
     path('my-schedule/', views.my_schedule_view, name='my_schedule'),
     

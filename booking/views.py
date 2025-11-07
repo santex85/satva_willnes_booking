@@ -763,12 +763,28 @@ def update_booking_time_view(request):
         # Получаем бронирование
         booking = get_object_or_404(Booking, pk=booking_id)
         
-        # Парсим дату
-        naive_dt = datetime.datetime.strptime(start_datetime_str, '%Y-%m-%dT%H:%M')
-        if timezone.is_naive(naive_dt):
-            new_start_time = timezone.make_aware(naive_dt)
-        else:
-            new_start_time = naive_dt
+        # Парсим дату (может быть в ISO формате с Z или без)
+        try:
+            # Пробуем парсить как naive datetime (локальное время) - формат YYYY-MM-DDTHH:MM
+            if 'T' in start_datetime_str and len(start_datetime_str) == 16:
+                naive_dt = datetime.datetime.strptime(start_datetime_str, '%Y-%m-%dT%H:%M')
+                new_start_time = timezone.make_aware(naive_dt)
+            else:
+                # Пробуем ISO формат (может быть с Z или timezone offset)
+                iso_str = start_datetime_str.replace('Z', '+00:00')
+                new_start_time = timezone.datetime.fromisoformat(iso_str)
+                if timezone.is_naive(new_start_time):
+                    new_start_time = timezone.make_aware(new_start_time)
+                # Конвертируем UTC в локальное время
+                new_start_time = timezone.localtime(new_start_time)
+                # Делаем aware снова для работы с БД (сохраняем локальное время)
+                naive_local = timezone.localtime(new_start_time).replace(tzinfo=None)
+                new_start_time = timezone.make_aware(naive_local)
+            
+            logger.debug(f"Parsed datetime: {start_datetime_str} -> {new_start_time} (local: {timezone.localtime(new_start_time)})")
+        except ValueError as e:
+            logger.error(f"Invalid datetime format in update_booking_time_view: {start_datetime_str}, error: {e}")
+            return JsonResponse({'error': 'Неверный формат даты и времени'}, status=400)
         
         # Проверяем доступность нового слота используя check_booking_conflicts
         # Это исключает само изменяемое бронирование из проверки
@@ -788,35 +804,18 @@ def update_booking_time_view(request):
         # Если текущий кабинет недоступен, ищем доступный
         if conflicts:
             logger.debug(f"Current cabinet {booking.cabinet.id} not available, searching for alternatives")
-            # Получаем доступные слоты для поиска альтернативного кабинета
-            date = new_start_time.date()
-            available_slots = find_available_slots(date, booking.service_variant)
             
-            # Ищем слот с нужным временем и специалистом
-            suitable_slot = None
-            for slot in available_slots:
-                slot_start = slot['start_time']
-                if (slot_start.year == new_start_time.year and
-                    slot_start.month == new_start_time.month and
-                    slot_start.day == new_start_time.day and
-                    slot_start.hour == new_start_time.hour and
-                    slot_start.minute == new_start_time.minute and
-                    slot['specialist'].id == booking.specialist.id):
-                    suitable_slot = slot
-                    break
+            # Получаем все кабинеты подходящего типа для услуги
+            service = booking.service_variant.service
+            required_cabinet_types = service.required_cabinet_types.all()
+            valid_cabinets = Cabinet.objects.filter(
+                cabinet_type__in=required_cabinet_types,
+                is_active=True
+            )
             
-            if not suitable_slot:
-                logger.warning(f"No suitable slot found for booking {booking.id} at {new_start_time}")
-                return JsonResponse({'error': 'Новый слот недоступен или занят'}, status=400)
-            
-            # Проверяем доступные кабинеты из слота
-            available_cabinets = suitable_slot.get('available_cabinets', [])
-            if not available_cabinets and suitable_slot.get('cabinet'):
-                available_cabinets = [suitable_slot['cabinet']]
-            
-            # Ищем доступный кабинет
+            # Проверяем каждый кабинет на доступность
             found_cabinet = None
-            for cab in available_cabinets:
+            for cab in valid_cabinets:
                 cab_conflicts = check_booking_conflicts(
                     start_time=new_start_time,
                     service_variant=booking.service_variant,
@@ -826,6 +825,7 @@ def update_booking_time_view(request):
                 )
                 if not cab_conflicts:
                     found_cabinet = cab
+                    logger.debug(f"Found available cabinet {cab.id} for booking {booking.id}")
                     break
             
             if not found_cabinet:

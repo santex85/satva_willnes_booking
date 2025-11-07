@@ -384,8 +384,14 @@
         const newStart = event.start;
         const bookingId = event.id;
 
-        // Форматируем дату в ISO-формат
-        const startDatetime = newStart.toISOString().slice(0, 16);
+        // Форматируем дату в локальное время (YYYY-MM-DDTHH:MM)
+        // FullCalendar работает с локальным временем, поэтому просто форматируем
+        const year = newStart.getFullYear();
+        const month = String(newStart.getMonth() + 1).padStart(2, '0');
+        const day = String(newStart.getDate()).padStart(2, '0');
+        const hours = String(newStart.getHours()).padStart(2, '0');
+        const minutes = String(newStart.getMinutes()).padStart(2, '0');
+        const startDatetime = `${year}-${month}-${day}T${hours}:${minutes}`;
 
         // Отправляем AJAX запрос
         const formData = new FormData();

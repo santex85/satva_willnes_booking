@@ -202,17 +202,30 @@ document.addEventListener('DOMContentLoaded', function() {
 
                 cabinetSelect.innerHTML = '<option value="">-- Выберите кабинет --</option>';
                 if (data.cabinets && data.cabinets.length > 0) {
+                    let cabinetFound = false;
                     data.cabinets.forEach(cabinet => {
                         const option = document.createElement('option');
                         option.value = cabinet.id;
                         option.textContent = cabinet.name;
-                        if (cabinet.id == currentCabinet) {
+                        // Используем строгое сравнение с преобразованием в строку
+                        if (String(cabinet.id) === String(currentCabinet)) {
                             option.selected = true;
+                            cabinetFound = true;
                         }
                         cabinetSelect.appendChild(option);
                     });
+                    // Если текущий кабинет не найден в списке доступных, но он был выбран, сохраняем его
+                    if (!cabinetFound && currentCabinet) {
+                        // Это может означать, что кабинет стал недоступен, но мы сохраняем выбор пользователя
+                        console.warn('Current cabinet not found in available cabinets');
+                    }
                 } else {
-                    cabinetSelect.innerHTML = '<option value="">Нет доступных кабинетов</option>';
+                    // Если нет доступных кабинетов, но был выбран кабинет, сохраняем его
+                    if (currentCabinet) {
+                        cabinetSelect.innerHTML = `<option value="${currentCabinet}" selected>Текущий кабинет (может быть недоступен)</option>`;
+                    } else {
+                        cabinetSelect.innerHTML = '<option value="">Нет доступных кабинетов</option>';
+                    }
                 }
             })
             .catch(error => {
@@ -273,6 +286,7 @@ document.addEventListener('DOMContentLoaded', function() {
     function loadSpecialistsForService() {
         const serviceVariantId = serviceVariantSelect.value;
         const currentSpecialist = specialistSelect.value;
+        const currentCabinet = cabinetSelect.value; // Сохраняем текущий кабинет
 
         if (!serviceVariantId) {
             specialistSelect.innerHTML = '<option value="">Сначала выберите услугу</option>';
@@ -299,8 +313,13 @@ document.addEventListener('DOMContentLoaded', function() {
                     specialistSelect.appendChild(option);
                 });
                 
-                // Сбрасываем кабинеты
-                cabinetSelect.innerHTML = '<option value="">Сначала выберите специалиста и время</option>';
+                // Сбрасываем кабинеты только если изменился специалист или нет времени
+                if (!startDatetimeInput.value || specialistSelect.value != currentSpecialist) {
+                    cabinetSelect.innerHTML = '<option value="">Сначала выберите специалиста и время</option>';
+                } else {
+                    // Если специалист не изменился и есть время, загружаем кабинеты
+                    loadAvailableCabinets();
+                }
             })
             .catch(error => {
                 console.error('Error loading specialists:', error);
@@ -336,12 +355,22 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Загружаем специалистов и кабинеты при загрузке страницы, если услуга выбрана
     if (serviceVariantSelect.value) {
+        // Сохраняем текущее значение кабинета перед загрузкой
+        const initialCabinetValue = cabinetSelect.value;
+        
         loadSpecialistsForService();
+        
         if (serviceVariantSelect.value && specialistSelect.value && startDatetimeInput.value) {
             // Небольшая задержка, чтобы специалисты успели загрузиться
             setTimeout(function() {
                 loadAvailableCabinets();
-            }, 300);
+                // Восстанавливаем значение кабинета после загрузки
+                if (initialCabinetValue) {
+                    setTimeout(function() {
+                        cabinetSelect.value = initialCabinetValue;
+                    }, 100);
+                }
+            }, 500);
         }
     }
 });

@@ -24,11 +24,11 @@
         <table id="schedule-week-view" style="width: 100%; border-collapse: collapse;">
             <thead>
                 <tr>
-                    <th style="padding: 10px; background-color: #417690; color: white; text-align: left; border: 1px solid #ddd;">
+                    <th style="padding: 10px; background-color: #417690; color: white; text-align: left; border: 1px solid #417690;">
                         Специалист
                     </th>
                     {% for day_value, day_name in days_of_week %}
-                    <th style="padding: 10px; background-color: #417690; color: white; text-align: center; border: 1px solid #ddd; min-width: 120px;">
+                    <th style="padding: 10px; background-color: #417690; color: white; text-align: center; border: 1px solid #417690; min-width: 120px;">
                         {{ day_name }}
                     </th>
                     {% endfor %}
@@ -37,29 +37,29 @@
             <tbody>
                 {% for row in schedule_data %}
                 <tr>
-                    <td style="padding: 10px; border: 1px solid #ddd; background-color: #f8f9fa; font-weight: bold;">
-                        <a href="{% url 'admin:booking_specialistprofile_change' row.specialist.id %}">
+                    <td style="padding: 10px; border: 1px solid #417690; background-color: #264b5d; font-weight: bold;">
+                        <a href="{% url 'admin:booking_specialistprofile_change' row.specialist.id %}" style="color: #79aec8;">
                             {{ row.specialist.full_name }}
                         </a>
                     </td>
                     {% for day_info in row.days %}
-                    <td style="padding: 10px; border: 1px solid #ddd; text-align: center; vertical-align: middle;">
+                    <td style="padding: 10px; border: 1px solid #417690; text-align: center; vertical-align: middle; background-color: #2c3e50;">
                         {% if day_info.schedule %}
-                            <div style="background-color: #d4edda; padding: 8px; border-radius: 4px; border: 1px solid #c3e6cb;">
-                                <strong>{{ day_info.schedule.start_time|time:"H:i" }}</strong> - 
-                                <strong>{{ day_info.schedule.end_time|time:"H:i" }}</strong>
+                            <div style="background-color: #34495e; padding: 8px; border-radius: 4px; border: 1px solid #4a5f7a;">
+                                <strong style="color: #ecf0f1;">{{ day_info.schedule.start_time|time:"H:i" }}</strong> - 
+                                <strong style="color: #ecf0f1;">{{ day_info.schedule.end_time|time:"H:i" }}</strong>
                                 <br>
                                 <a href="{% url 'admin:booking_specialistschedule_change' day_info.schedule.id %}" 
-                                   style="font-size: 11px; color: #155724;">
+                                   style="font-size: 11px; color: #79aec8; text-decoration: none;">
                                     Редактировать
                                 </a>
                             </div>
                         {% else %}
-                            <div style="color: #6c757d; font-style: italic;">
+                            <div style="color: #95a5a6; font-style: italic;">
                                 Нет расписания
                                 <br>
                                 <a href="{% url 'admin:booking_specialistprofile_change' row.specialist.id %}" 
-                                   style="font-size: 11px; color: #417690;">
+                                   style="font-size: 11px; color: #79aec8; text-decoration: none;">
                                     Добавить
                                 </a>
                             </div>
@@ -69,7 +69,7 @@
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="8" style="padding: 20px; text-align: center; color: #6c757d;">
+                    <td colspan="8" style="padding: 20px; text-align: center; color: #95a5a6;">
                         Нет специалистов
                     </td>
                 </tr>
@@ -82,9 +82,19 @@
 <style>
 #schedule-week-view {
     margin-top: 20px;
+    background-color: #2c3e50;
 }
 #schedule-week-view tbody tr:hover {
-    background-color: #f1f1f1;
+    background-color: #34495e;
+}
+#schedule-week-view tbody tr:hover td {
+    background-color: #34495e;
+}
+#schedule-week-view tbody tr:hover td:first-child {
+    background-color: #2d4a5e;
+}
+#schedule-week-view a:hover {
+    text-decoration: underline;
 }
 </style>
 {% endblock %}

@@ -114,12 +114,16 @@ def my_schedule_view(request):
     # Подсчитываем общее количество бронирований
     total_bookings = bookings.count()
     
+    # Получаем все услуги, которые может выполнять специалист
+    services = specialist.services_can_perform.all().order_by('name')
+    
     return render(request, 'specialist_schedule.html', {
         'week_days': week_days,
         'today': today,
         'week_end': week_end,
         'total_bookings': total_bookings,
-        'specialist': specialist
+        'specialist': specialist,
+        'services': services
     })
 
 

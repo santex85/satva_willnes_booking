@@ -1,4 +1,4 @@
-.PHONY: help build up down restart logs shell migrate createsuperuser collectstatic backup
+.PHONY: help build up down restart logs shell migrate createsuperuser collectstatic backup deploy deploy-full
 
 help: ## Показать эту справку
 	@echo "Доступные команды:"
@@ -85,6 +85,40 @@ update: ## Обновить код и перезапустить (git pull + reb
 	docker compose up -d
 	docker compose exec web python manage.py migrate
 	docker compose exec web python manage.py collectstatic --noinput
+
+deploy: ## Деплой: собрать web, миграции, статика, перезапуск и логи
+	@echo "🚀 Начинаем деплой..."
+	@echo "📦 Сборка образа web..."
+	docker compose build web
+	@echo "🗄️  Применение миграций..."
+	docker compose exec web python manage.py migrate
+	@echo "📁 Сборка статических файлов..."
+	docker compose exec web python manage.py collectstatic --noinput
+	@echo "🔄 Перезапуск контейнеров..."
+	docker compose up -d
+	@echo "📊 Статус контейнеров:"
+	docker compose ps
+	@echo "📋 Последние 50 строк логов web:"
+	docker compose logs --tail=50 web
+	@echo "✅ Деплой завершен!"
+
+deploy-full: ## Полный деплой: git pull + deploy
+	@echo "🔄 Обновление кода из git..."
+	git pull origin main
+	@echo "🚀 Начинаем деплой..."
+	@echo "📦 Сборка образа web..."
+	docker compose build web
+	@echo "🗄️  Применение миграций..."
+	docker compose exec web python manage.py migrate
+	@echo "📁 Сборка статических файлов..."
+	docker compose exec web python manage.py collectstatic --noinput
+	@echo "🔄 Перезапуск контейнеров..."
+	docker compose up -d
+	@echo "📊 Статус контейнеров:"
+	docker compose ps
+	@echo "📋 Последние 50 строк логов web:"
+	docker compose logs --tail=50 web
+	@echo "✅ Деплой завершен!"
 
 stats: ## Показать использование ресурсов контейнерами
 	docker stats

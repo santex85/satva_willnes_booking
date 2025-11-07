@@ -15,7 +15,7 @@ import logging
 from django.contrib.auth.models import User, Group
 from .models import Booking, SpecialistProfile, Cabinet, ServiceVariant, SpecialistSchedule
 from .decorators import admin_required, specialist_required
-from .utils import find_available_slots
+from .utils import find_available_slots, check_booking_conflicts
 from .forms import SelectServiceForm, SpecialistScheduleForm, ReportForm, BookingEditForm, QuickBookingForm, SpecialistRegistrationForm
 
 logger = logging.getLogger(__name__)
@@ -494,11 +494,17 @@ def booking_detail_view(request, pk):
     if request.method == 'POST':
         form = BookingEditForm(request.POST, instance=booking)
         if form.is_valid():
-            form.save()
-            messages.success(request, 'Бронирование успешно обновлено')
-            return redirect('booking_detail', pk=booking.pk)
+            try:
+                form.save()
+                logger.info(f"Booking {booking.id} updated by {request.user.username}")
+                messages.success(request, 'Бронирование успешно обновлено')
+                return redirect('booking_detail', pk=booking.pk)
+            except Exception as e:
+                logger.error(f"Error updating booking {booking.id}: {e}", exc_info=True)
+                messages.error(request, 'Ошибка при обновлении бронирования. Попробуйте еще раз.')
         else:
-            messages.error(request, 'Ошибка при обновлении бронирования')
+            logger.warning(f"Form validation errors for booking {booking.id}: {form.errors}")
+            messages.error(request, 'Ошибка при обновлении бронирования. Проверьте введенные данные.')
     else:
         form = BookingEditForm(instance=booking)
     
@@ -506,6 +512,102 @@ def booking_detail_view(request, pk):
         'booking': booking,
         'form': form
     })
+
+
+@admin_required
+def validate_booking_edit_view(request, pk):
+    """
+    AJAX endpoint для валидации редактирования бронирования без сохранения
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Только POST запросы'}, status=405)
+    
+    booking = get_object_or_404(Booking, pk=pk)
+    
+    try:
+        # Получаем данные из запроса
+        start_datetime_str = request.POST.get('start_datetime')
+        service_variant_id = request.POST.get('service_variant')
+        specialist_id = request.POST.get('specialist')
+        cabinet_id = request.POST.get('cabinet')
+        
+        if not all([start_datetime_str, service_variant_id, specialist_id, cabinet_id]):
+            return JsonResponse({
+                'valid': False,
+                'error': 'Не указаны все обязательные поля'
+            }, status=400)
+        
+        # Парсим datetime
+        try:
+            naive_dt = datetime.datetime.strptime(start_datetime_str, '%Y-%m-%dT%H:%M')
+            if timezone.is_naive(naive_dt):
+                start_time = timezone.make_aware(naive_dt)
+            else:
+                start_time = naive_dt
+        except ValueError:
+            return JsonResponse({
+                'valid': False,
+                'error': 'Неверный формат даты и времени'
+            }, status=400)
+        
+        # Получаем объекты
+        service_variant = get_object_or_404(ServiceVariant, id=service_variant_id)
+        specialist = get_object_or_404(SpecialistProfile, id=specialist_id)
+        cabinet = get_object_or_404(Cabinet, id=cabinet_id)
+        
+        # Проверяем конфликты
+        conflicts = check_booking_conflicts(
+            start_time=start_time,
+            service_variant=service_variant,
+            specialist=specialist,
+            cabinet=cabinet,
+            exclude_booking_id=booking.id
+        )
+        
+        if conflicts:
+            conflict_messages = []
+            if conflicts.get('specialist_busy'):
+                conflict_messages.append('Специалист занят в это время')
+            if conflicts.get('cabinet_busy'):
+                conflict_messages.append('Кабинет занят в это время')
+            if conflicts.get('specialist_not_available'):
+                conflict_messages.append('Специалист не работает в это время')
+            if conflicts.get('cabinet_not_available'):
+                conflict_messages.append('Кабинет недоступен в это время')
+            
+            return JsonResponse({
+                'valid': False,
+                'error': '; '.join(conflict_messages) if conflict_messages else 'Выбранное время недоступно',
+                'conflicts': conflicts
+            })
+        
+        # Проверяем что специалист может выполнять услугу
+        service = service_variant.service
+        if not specialist.services_can_perform.filter(id=service.id).exists():
+            return JsonResponse({
+                'valid': False,
+                'error': 'Выбранный специалист не может выполнять данную услугу'
+            })
+        
+        # Проверяем что кабинет подходит для услуги
+        required_cabinet_types = service.required_cabinet_types.all()
+        if cabinet.cabinet_type not in required_cabinet_types:
+            return JsonResponse({
+                'valid': False,
+                'error': 'Выбранный кабинет не подходит для данной услуги'
+            })
+        
+        return JsonResponse({
+            'valid': True,
+            'message': 'Данные валидны'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error validating booking edit {pk}: {e}", exc_info=True)
+        return JsonResponse({
+            'valid': False,
+            'error': 'Ошибка при проверке данных'
+        }, status=500)
 
 
 @admin_required

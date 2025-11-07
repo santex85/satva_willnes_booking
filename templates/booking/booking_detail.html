@@ -65,12 +65,40 @@
 
                     <div class="row g-3 mb-3">
                         <div class="col-12 col-md-6">
+                            {{ form.service_variant.label_tag }}
+                            {{ form.service_variant }}
+                            {% if form.service_variant.errors %}
+                                <div class="text-danger">{{ form.service_variant.errors }}</div>
+                            {% endif %}
+                        </div>
+                        <div class="col-12 col-md-6">
+                            {{ form.specialist.label_tag }}
+                            {{ form.specialist }}
+                            {% if form.specialist.errors %}
+                                <div class="text-danger">{{ form.specialist.errors }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-12 col-md-6">
                             {{ form.start_datetime.label_tag }}
                             {{ form.start_datetime }}
                             {% if form.start_datetime.errors %}
                                 <div class="text-danger">{{ form.start_datetime.errors }}</div>
                             {% endif %}
+                            <div id="start_datetime_validation" class="mt-1"></div>
                         </div>
+                        <div class="col-12 col-md-6">
+                            {{ form.cabinet.label_tag }}
+                            {{ form.cabinet }}
+                            {% if form.cabinet.errors %}
+                                <div class="text-danger">{{ form.cabinet.errors }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="row g-3 mb-3">
                         <div class="col-12 col-md-6">
                             {{ form.status.label_tag }}
                             {{ form.status }}
@@ -79,6 +107,8 @@
                             {% endif %}
                         </div>
                     </div>
+
+                    <div id="validation_message" class="alert d-none mb-3"></div>
 
                     {% if form.non_field_errors %}
                         <div class="alert alert-danger">
@@ -130,5 +160,191 @@
         </div>
     </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const bookingId = {{ booking.id }};
+    const form = document.querySelector('form');
+    const serviceVariantSelect = document.getElementById('id_service_variant');
+    const specialistSelect = document.getElementById('id_specialist');
+    const startDatetimeInput = document.getElementById('id_start_datetime');
+    const cabinetSelect = document.getElementById('id_cabinet');
+    const validationMessage = document.getElementById('validation_message');
+    const startDatetimeValidation = document.getElementById('start_datetime_validation');
+    
+    let validationTimeout = null;
+
+    // Функция загрузки доступных кабинетов
+    function loadAvailableCabinets() {
+        const serviceVariantId = serviceVariantSelect.value;
+        const specialistId = specialistSelect.value;
+        const startDatetime = startDatetimeInput.value;
+
+        if (!serviceVariantId || !specialistId || !startDatetime) {
+            cabinetSelect.innerHTML = '<option value="">Сначала выберите услугу, специалиста и время</option>';
+            return;
+        }
+
+        // Показываем загрузку
+        const currentCabinet = cabinetSelect.value;
+        cabinetSelect.innerHTML = '<option value="">Загрузка...</option>';
+        cabinetSelect.disabled = true;
+
+        // Загружаем доступные кабинеты
+        fetch(`/api/available-cabinets/?service_variant_id=${serviceVariantId}&specialist_id=${specialistId}&datetime=${encodeURIComponent(startDatetime)}`)
+            .then(response => response.json())
+            .then(data => {
+                cabinetSelect.disabled = false;
+                if (data.error) {
+                    cabinetSelect.innerHTML = `<option value="">${data.error}</option>`;
+                    return;
+                }
+
+                cabinetSelect.innerHTML = '<option value="">-- Выберите кабинет --</option>';
+                if (data.cabinets && data.cabinets.length > 0) {
+                    data.cabinets.forEach(cabinet => {
+                        const option = document.createElement('option');
+                        option.value = cabinet.id;
+                        option.textContent = cabinet.name;
+                        if (cabinet.id == currentCabinet) {
+                            option.selected = true;
+                        }
+                        cabinetSelect.appendChild(option);
+                    });
+                } else {
+                    cabinetSelect.innerHTML = '<option value="">Нет доступных кабинетов</option>';
+                }
+            })
+            .catch(error => {
+                console.error('Error loading cabinets:', error);
+                cabinetSelect.disabled = false;
+                cabinetSelect.innerHTML = '<option value="">Ошибка загрузки</option>';
+            });
+    }
+
+    // Функция AJAX валидации
+    function validateBookingEdit() {
+        const serviceVariantId = serviceVariantSelect.value;
+        const specialistId = specialistSelect.value;
+        const startDatetime = startDatetimeInput.value;
+        const cabinetId = cabinetSelect.value;
+
+        if (!serviceVariantId || !specialistId || !startDatetime || !cabinetId) {
+            validationMessage.classList.add('d-none');
+            startDatetimeValidation.innerHTML = '';
+            return;
+        }
+
+        // Отправляем AJAX запрос для валидации
+        const formData = new FormData();
+        formData.append('start_datetime', startDatetime);
+        formData.append('service_variant', serviceVariantId);
+        formData.append('specialist', specialistId);
+        formData.append('cabinet', cabinetId);
+        formData.append('csrfmiddlewaretoken', document.querySelector('[name=csrfmiddlewaretoken]').value);
+
+        fetch(`/booking/${bookingId}/validate/`, {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.valid) {
+                validationMessage.classList.remove('alert-danger');
+                validationMessage.classList.add('alert-success', 'd-none');
+                validationMessage.textContent = '';
+                startDatetimeValidation.innerHTML = '<small class="text-success"><i class="bi bi-check-circle"></i> Время доступно</small>';
+            } else {
+                validationMessage.classList.remove('alert-success', 'd-none');
+                validationMessage.classList.add('alert-danger');
+                validationMessage.innerHTML = `<i class="bi bi-exclamation-triangle"></i> ${data.error || 'Ошибка валидации'}`;
+                startDatetimeValidation.innerHTML = `<small class="text-danger"><i class="bi bi-x-circle"></i> ${data.error || 'Ошибка'}</small>`;
+            }
+        })
+        .catch(error => {
+            console.error('Error validating booking:', error);
+            validationMessage.classList.remove('alert-success', 'd-none');
+            validationMessage.classList.add('alert-danger');
+            validationMessage.innerHTML = '<i class="bi bi-exclamation-triangle"></i> Ошибка при проверке данных';
+        });
+    }
+
+    // Функция загрузки специалистов для услуги
+    function loadSpecialistsForService() {
+        const serviceVariantId = serviceVariantSelect.value;
+        const currentSpecialist = specialistSelect.value;
+
+        if (!serviceVariantId) {
+            specialistSelect.innerHTML = '<option value="">Сначала выберите услугу</option>';
+            return;
+        }
+
+        // Показываем загрузку
+        specialistSelect.innerHTML = '<option value="">Загрузка...</option>';
+        specialistSelect.disabled = true;
+
+        // Загружаем специалистов
+        fetch(`/api/specialists-for-service/?service_variant_id=${serviceVariantId}`)
+            .then(response => response.json())
+            .then(data => {
+                specialistSelect.disabled = false;
+                specialistSelect.innerHTML = '<option value="">Выберите специалиста</option>';
+                data.forEach(specialist => {
+                    const option = document.createElement('option');
+                    option.value = specialist.id;
+                    option.textContent = specialist.full_name;
+                    if (specialist.id == currentSpecialist) {
+                        option.selected = true;
+                    }
+                    specialistSelect.appendChild(option);
+                });
+                
+                // Сбрасываем кабинеты
+                cabinetSelect.innerHTML = '<option value="">Сначала выберите специалиста и время</option>';
+            })
+            .catch(error => {
+                console.error('Error loading specialists:', error);
+                specialistSelect.disabled = false;
+                specialistSelect.innerHTML = '<option value="">Ошибка загрузки</option>';
+            });
+    }
+
+    // Обработчики событий для динамической валидации и загрузки кабинетов
+    serviceVariantSelect.addEventListener('change', function() {
+        loadSpecialistsForService();
+        loadAvailableCabinets();
+        if (validationTimeout) clearTimeout(validationTimeout);
+        validationTimeout = setTimeout(validateBookingEdit, 500);
+    });
+
+    specialistSelect.addEventListener('change', function() {
+        loadAvailableCabinets();
+        if (validationTimeout) clearTimeout(validationTimeout);
+        validationTimeout = setTimeout(validateBookingEdit, 500);
+    });
+
+    startDatetimeInput.addEventListener('change', function() {
+        loadAvailableCabinets();
+        if (validationTimeout) clearTimeout(validationTimeout);
+        validationTimeout = setTimeout(validateBookingEdit, 500);
+    });
+
+    cabinetSelect.addEventListener('change', function() {
+        if (validationTimeout) clearTimeout(validationTimeout);
+        validationTimeout = setTimeout(validateBookingEdit, 500);
+    });
+
+    // Загружаем специалистов и кабинеты при загрузке страницы, если услуга выбрана
+    if (serviceVariantSelect.value) {
+        loadSpecialistsForService();
+        if (serviceVariantSelect.value && specialistSelect.value && startDatetimeInput.value) {
+            // Небольшая задержка, чтобы специалисты успели загрузиться
+            setTimeout(function() {
+                loadAvailableCabinets();
+            }, 300);
+        }
+    }
+});
+</script>
 {% endblock %}
 

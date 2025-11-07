@@ -151,16 +151,108 @@ class BookingEditForm(forms.ModelForm):
             'status': forms.Select(attrs={'class': 'form-select'}),
         }
     
+    service_variant = forms.ModelChoiceField(
+        queryset=ServiceVariant.objects.all().select_related('service').order_by('service__name', 'duration_minutes'),
+        label='Услуга',
+        widget=forms.Select(attrs={'class': 'form-select'}),
+        required=True
+    )
+    specialist = forms.ModelChoiceField(
+        queryset=SpecialistProfile.objects.all(),
+        label='Специалист',
+        widget=forms.Select(attrs={'class': 'form-select'}),
+        required=True
+    )
+    cabinet = forms.ModelChoiceField(
+        queryset=Cabinet.objects.filter(is_active=True),
+        label='Кабинет',
+        widget=forms.Select(attrs={'class': 'form-select'}),
+        required=True,
+        empty_label='-- Выберите кабинет --'
+    )
+    
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if self.instance and self.instance.pk:
             # Конвертируем timezone-aware datetime в naive для HTML input
             local_time = timezone.localtime(self.instance.start_time)
             self.initial['start_datetime'] = local_time.strftime('%Y-%m-%dT%H:%M')
+            # Устанавливаем начальные значения для новых полей
+            self.initial['service_variant'] = self.instance.service_variant
+            self.initial['specialist'] = self.instance.specialist
+            self.initial['cabinet'] = self.instance.cabinet
+    
+    def clean(self):
+        cleaned_data = super().clean()
+        start_datetime_str = cleaned_data.get('start_datetime')
+        service_variant = cleaned_data.get('service_variant')
+        specialist = cleaned_data.get('specialist')
+        cabinet = cleaned_data.get('cabinet')
+        
+        # Если нет обязательных полей, пропускаем валидацию (будут ошибки полей)
+        if not all([start_datetime_str, service_variant, specialist, cabinet]):
+            return cleaned_data
+        
+        # Парсим datetime
+        if isinstance(start_datetime_str, str):
+            naive_dt = datetime.datetime.strptime(start_datetime_str, '%Y-%m-%dT%H:%M')
+            if timezone.is_naive(naive_dt):
+                start_time = timezone.make_aware(naive_dt)
+            else:
+                start_time = start_datetime_str
+        else:
+            start_time = start_datetime_str
+        
+        # Проверка что специалист может выполнять услугу
+        service = service_variant.service
+        if not specialist.services_can_perform.filter(id=service.id).exists():
+            raise forms.ValidationError({
+                'specialist': 'Выбранный специалист не может выполнять данную услугу'
+            })
+        
+        # Проверка что кабинет подходит для услуги
+        required_cabinet_types = service.required_cabinet_types.all()
+        if cabinet.cabinet_type not in required_cabinet_types:
+            raise forms.ValidationError({
+                'cabinet': 'Выбранный кабинет не подходит для данной услуги'
+            })
+        
+        # Проверка конфликтов (исключая текущее бронирование)
+        from .utils import check_booking_conflicts
+        booking_id = self.instance.pk if self.instance else None
+        conflicts = check_booking_conflicts(
+            start_time=start_time,
+            service_variant=service_variant,
+            specialist=specialist,
+            cabinet=cabinet,
+            exclude_booking_id=booking_id
+        )
+        
+        if conflicts:
+            conflict_messages = []
+            if conflicts.get('specialist_busy'):
+                conflict_messages.append('Специалист занят в это время')
+            if conflicts.get('cabinet_busy'):
+                conflict_messages.append('Кабинет занят в это время')
+            if conflicts.get('specialist_not_available'):
+                conflict_messages.append('Специалист не работает в это время')
+            if conflicts.get('cabinet_not_available'):
+                conflict_messages.append('Кабинет недоступен в это время')
+            
+            raise forms.ValidationError({
+                'start_datetime': '; '.join(conflict_messages) if conflict_messages else 'Выбранное время недоступно'
+            })
+        
+        return cleaned_data
     
     def save(self, commit=True):
         instance = super().save(commit=False)
         start_datetime_str = self.cleaned_data['start_datetime']
+        
+        # Обновляем поля из формы
+        instance.service_variant = self.cleaned_data['service_variant']
+        instance.specialist = self.cleaned_data['specialist']
+        instance.cabinet = self.cleaned_data['cabinet']
         
         # Парсим datetime из формы
         if isinstance(start_datetime_str, str):
@@ -169,11 +261,11 @@ class BookingEditForm(forms.ModelForm):
             if timezone.is_naive(naive_dt):
                 instance.start_time = timezone.make_aware(naive_dt)
             else:
-                instance.start_time = naive_dt
+                instance.start_time = start_datetime_str
         else:
             instance.start_time = start_datetime_str
         
-        # Обновляем end_time при изменении start_time
+        # Обновляем end_time при изменении start_time или service_variant
         from .models import SystemSettings
         settings = SystemSettings.get_solo()
         total_duration = instance.service_variant.duration_minutes + settings.buffer_time_minutes

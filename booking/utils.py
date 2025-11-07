@@ -132,3 +132,97 @@ def find_available_slots(date: datetime.date, service_variant: ServiceVariant) -
     
     return available_slots
 
+
+def check_booking_conflicts(start_time, service_variant, specialist, cabinet, exclude_booking_id=None):
+    """
+    Проверяет конфликты для указанного времени, специалиста, кабинета и услуги.
+    
+    Args:
+        start_time: datetime - время начала бронирования (timezone-aware)
+        service_variant: ServiceVariant - вариант услуги
+        specialist: SpecialistProfile - специалист
+        cabinet: Cabinet - кабинет
+        exclude_booking_id: int (optional) - ID бронирования, которое нужно исключить из проверки
+        
+    Returns:
+        dict с информацией о конфликтах или None если конфликтов нет
+        Формат: {
+            'specialist_busy': bool,
+            'cabinet_busy': bool,
+            'specialist_not_available': bool,
+            'cabinet_not_available': bool
+        }
+    """
+    conflicts = {
+        'specialist_busy': False,
+        'cabinet_busy': False,
+        'specialist_not_available': False,
+        'cabinet_not_available': False
+    }
+    
+    # Получаем настройки для расчета времени окончания
+    settings = SystemSettings.get_solo()
+    duration = service_variant.duration_minutes
+    buffer = settings.buffer_time_minutes
+    total_duration = duration + buffer
+    end_time = start_time + datetime.timedelta(minutes=total_duration)
+    
+    # Проверяем что время в будущем (или текущее)
+    if start_time < timezone.now():
+        # Это не конфликт, но может быть проблемой - не обрабатываем здесь
+        pass
+    
+    # Проверяем график работы специалиста
+    date = timezone.localtime(start_time).date()
+    day_of_week = date.weekday()
+    local_start_time = timezone.localtime(start_time).time()
+    
+    schedule = SpecialistSchedule.objects.filter(
+        specialist=specialist,
+        day_of_week=day_of_week
+    ).first()
+    
+    if not schedule:
+        conflicts['specialist_not_available'] = True
+    else:
+        # Проверяем что время начала входит в рабочие часы
+        if local_start_time < schedule.start_time:
+            conflicts['specialist_not_available'] = True
+        else:
+            # Проверяем что время окончания не выходит за рабочие часы
+            local_end_time = timezone.localtime(end_time).time()
+            if local_end_time > schedule.end_time:
+                conflicts['specialist_not_available'] = True
+    
+    # Проверяем что кабинет активен
+    if not cabinet.is_active:
+        conflicts['cabinet_not_available'] = True
+    
+    # Проверяем конфликты с существующими бронированиями
+    # Получаем все бронирования, которые пересекаются с нашим временем
+    overlapping_bookings = Booking.objects.filter(
+        start_time__lt=end_time,
+        end_time__gt=start_time,
+        status='confirmed'  # Проверяем только подтвержденные бронирования
+    ).select_related('specialist', 'cabinet')
+    
+    # Исключаем текущее бронирование если указано
+    if exclude_booking_id:
+        overlapping_bookings = overlapping_bookings.exclude(id=exclude_booking_id)
+    
+    # Проверяем занятость специалиста
+    specialist_conflicts = overlapping_bookings.filter(specialist=specialist)
+    if specialist_conflicts.exists():
+        conflicts['specialist_busy'] = True
+    
+    # Проверяем занятость кабинета
+    cabinet_conflicts = overlapping_bookings.filter(cabinet=cabinet)
+    if cabinet_conflicts.exists():
+        conflicts['cabinet_busy'] = True
+    
+    # Возвращаем None если нет конфликтов, иначе словарь с конфликтами
+    if any(conflicts.values()):
+        return conflicts
+    else:
+        return None
+

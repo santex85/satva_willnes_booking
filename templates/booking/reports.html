@@ -81,7 +81,7 @@
                             <tr>
                                 <th>#</th>
                                 <th>Специалист</th>
-                                <th class="text-end">Часы работы</th>
+                                <th class="text-end">Нагрузка</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -90,7 +90,7 @@
                                 <td>{{ forloop.counter }}</td>
                                 <td>{{ item.specialist__full_name }}</td>
                                 <td class="text-end">
-                                    <span class="badge bg-warning text-dark">{{ item.total_duration|floatformat:0 }}</span>
+                                    <span class="badge bg-warning text-dark">{{ item.total_duration_display }}</span>
                                 </td>
                             </tr>
                             {% endfor %}

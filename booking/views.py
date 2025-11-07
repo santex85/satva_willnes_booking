@@ -1055,12 +1055,31 @@ def reports_view(request):
             count=Count('id')
         ).order_by('-count')
         
-        specialist_load = Booking.objects.filter(
+        specialist_load_qs = Booking.objects.filter(
             start_time__date__range=[start, end],
             status='confirmed'
         ).values('specialist__full_name').annotate(
             total_duration=Sum('service_variant__duration_minutes')
         ).order_by('-total_duration')
+
+        specialist_load = []
+        for item in specialist_load_qs:
+            minutes = item.get('total_duration') or 0
+            if minutes >= 60:
+                hours = minutes // 60
+                remaining_minutes = minutes % 60
+                if remaining_minutes:
+                    display = f"{hours} ч {remaining_minutes} мин"
+                else:
+                    display = f"{hours} ч"
+            else:
+                display = f"{minutes} мин"
+
+            specialist_load.append({
+                **item,
+                'total_duration_display': display,
+                'total_duration_minutes': minutes
+            })
     
     return render(request, 'booking/reports.html', {
         'form': form,

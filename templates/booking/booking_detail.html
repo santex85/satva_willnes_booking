@@ -190,8 +190,9 @@ document.addEventListener('DOMContentLoaded', function() {
         cabinetSelect.innerHTML = '<option value="">Загрузка...</option>';
         cabinetSelect.disabled = true;
 
-        // Загружаем доступные кабинеты
-        fetch(`/api/available-cabinets/?service_variant_id=${serviceVariantId}&specialist_id=${specialistId}&datetime=${encodeURIComponent(startDatetime)}`)
+        // Загружаем доступные кабинеты (исключаем текущее бронирование из проверки)
+        const excludeBookingParam = bookingId ? `&exclude_booking_id=${bookingId}` : '';
+        fetch(`/api/available-cabinets/?service_variant_id=${serviceVariantId}&specialist_id=${specialistId}&datetime=${encodeURIComponent(startDatetime)}${excludeBookingParam}`)
             .then(response => response.json())
             .then(data => {
                 cabinetSelect.disabled = false;

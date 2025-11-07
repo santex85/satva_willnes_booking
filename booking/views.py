@@ -243,6 +243,7 @@ def get_available_cabinets_view(request):
     service_variant_id = request.GET.get('service_variant_id')
     specialist_id = request.GET.get('specialist_id')
     datetime_str = request.GET.get('datetime')
+    exclude_booking_id = request.GET.get('exclude_booking_id')  # ID бронирования для исключения из проверки
     
     if not service_variant_id or not specialist_id or not datetime_str:
         logger.warning(f"Missing parameters: service_variant_id={service_variant_id}, specialist_id={specialist_id}, datetime={datetime_str}")
@@ -268,64 +269,41 @@ def get_available_cabinets_view(request):
                 logger.warning(f"Invalid datetime format: {datetime_str}")
                 return JsonResponse({'error': 'Неверный формат даты и времени'}, status=400)
         
-        # Получаем доступные слоты для этой даты и услуги
-        date = timezone.localtime(start_datetime).date()
-        available_slots = find_available_slots(date, service_variant)
+        # Используем check_booking_conflicts для проверки доступности кабинетов
+        # Это позволяет исключить текущее бронирование из проверки
+        from .utils import check_booking_conflicts
         
-        logger.debug(f"Found {len(available_slots)} available slots for date {date}, service_variant {service_variant_id}, specialist {specialist_id}")
+        # Получаем все кабинеты подходящего типа для услуги
+        service = service_variant.service
+        required_cabinet_types = service.required_cabinet_types.all()
+        valid_cabinets = Cabinet.objects.filter(
+            cabinet_type__in=required_cabinet_types,
+            is_active=True
+        )
         
-        # Конвертируем запрошенное время в локальное для сравнения
-        local_request = timezone.localtime(start_datetime)
+        # Проверяем каждый кабинет на доступность
+        available_cabinets = []
+        exclude_id = int(exclude_booking_id) if exclude_booking_id else None
         
-        # Ищем слот с соответствующим временем и специалистом
-        suitable_slot = None
-        min_diff = None
-        
-        for slot in available_slots:
-            slot_start = slot['start_time']
-            local_slot = timezone.localtime(slot_start)
+        for cabinet in valid_cabinets:
+            conflicts = check_booking_conflicts(
+                start_time=start_datetime,
+                service_variant=service_variant,
+                specialist=specialist,
+                cabinet=cabinet,
+                exclude_booking_id=exclude_id
+            )
             
-            # Проверяем что это тот же специалист и тот же день
-            if slot['specialist'].id != int(specialist_id):
-                continue
-            
-            if (local_slot.year != local_request.year or
-                local_slot.month != local_request.month or
-                local_slot.day != local_request.day):
-                continue
-            
-            # Ищем точное совпадение по часам и минутам
-            if (local_slot.hour == local_request.hour and
-                local_slot.minute == local_request.minute):
-                suitable_slot = slot
-                logger.debug(f"Found exact match slot: {local_slot}")
-                break
-            
-            # Или ближайший доступный слот (не ранее запрошенного времени, но не более чем на 1 час позже)
-            if local_slot >= local_request:
-                diff = (local_slot - local_request).total_seconds()
-                # Ограничиваем поиск слотами в пределах 1 часа от запрошенного времени
-                if diff <= 3600:  # 1 час = 3600 секунд
-                    if min_diff is None or diff < min_diff:
-                        min_diff = diff
-                        suitable_slot = slot
+            if not conflicts:
+                available_cabinets.append(cabinet)
         
-        if not suitable_slot:
-            logger.warning(f"No suitable slot found for specialist {specialist_id}, datetime {datetime_str}, available slots: {len(available_slots)}")
-            # Логируем доступные слоты для этого специалиста для отладки
-            specialist_slots = [s for s in available_slots if s['specialist'].id == int(specialist_id)]
-            logger.debug(f"Slots for specialist {specialist_id}: {[(timezone.localtime(s['start_time']).strftime('%Y-%m-%d %H:%M'), len(s.get('available_cabinets', []))) for s in specialist_slots[:5]]}")
+        if not available_cabinets:
+            logger.warning(f"No available cabinets for specialist {specialist_id}, datetime {datetime_str}, exclude_booking_id={exclude_id}")
             return JsonResponse({'error': 'Слот не найден или недоступен'}, status=404)
-        
-        # Получаем доступные кабинеты из слота
-        available_cabinets = suitable_slot.get('available_cabinets', [])
-        if not available_cabinets and suitable_slot.get('cabinet'):
-            # Для обратной совместимости
-            available_cabinets = [suitable_slot['cabinet']]
         
         cabinets_data = [{'id': cab.id, 'name': cab.name} for cab in available_cabinets]
         
-        logger.debug(f"Returning {len(cabinets_data)} available cabinets for slot")
+        logger.debug(f"Returning {len(cabinets_data)} available cabinets for slot, exclude_booking_id={exclude_id}")
         return JsonResponse({'cabinets': cabinets_data}, safe=False)
         
     except (ValueError, ServiceVariant.DoesNotExist, SpecialistProfile.DoesNotExist) as e:

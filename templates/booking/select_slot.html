@@ -26,50 +26,74 @@
                     <input type="hidden" name="date" value="{{ form_data.date }}">
 
                     <h5 class="h6 mb-3"><i class="bi bi-clock"></i> Доступные слоты:</h5>
-                    <div class="row g-2 g-md-3">
-                        {% for slot in slots %}
-                        <div class="col-12 col-sm-6 col-md-4 mb-2 mb-md-3">
-                            <div class="form-check">
-                                <input class="form-check-input slot-radio" type="radio" name="selected_slot"
-                                       id="slot_{{ forloop.counter }}"
-                                       value="{{ slot.start_time|date:'Y-m-d\TH:i:s' }}|{{ slot.specialist.id }}"
-                                       data-slot-index="{{ forloop.counter0 }}" required>
-                                <label class="form-check-label card border-success" for="slot_{{ forloop.counter }}" style="cursor: pointer; width: 100%;">
-                                    <div class="card-body">
-                                        <strong><i class="bi bi-clock"></i> {{ slot.start_time|time:"H:i" }}</strong><br>
-                                        <small class="text-muted">
-                                            <i class="bi bi-person"></i> {{ slot.specialist.full_name }}<br>
-                                            {% if slot.available_cabinets|length > 1 %}
-                                                <i class="bi bi-building"></i> Выберите кабинет ({{ slot.available_cabinets|length }} доступно)
-                                            {% else %}
-                                                <i class="bi bi-building"></i> {{ slot.cabinet.name }}
-                                            {% endif %}
-                                        </small>
+                    
+                    {% if grouped_slots %}
+                    <div class="accordion" id="specialistsAccordion">
+                        {% for group in grouped_slots %}
+                        <div class="accordion-item">
+                            <h2 class="accordion-header" id="heading_{{ group.specialist.id }}">
+                                <button class="accordion-button {% if not forloop.first %}collapsed{% endif %}" type="button" 
+                                        data-bs-toggle="collapse" data-bs-target="#collapse_{{ group.specialist.id }}" 
+                                        aria-expanded="{% if forloop.first %}true{% else %}false{% endif %}" 
+                                        aria-controls="collapse_{{ group.specialist.id }}">
+                                    <i class="bi bi-person me-2"></i>
+                                    <strong>{{ group.specialist.full_name }}</strong>
+                                    <span class="badge bg-primary ms-2">{{ group.slots|length }} слотов</span>
+                                </button>
+                            </h2>
+                            <div id="collapse_{{ group.specialist.id }}" 
+                                 class="accordion-collapse collapse {% if forloop.first %}show{% endif %}" 
+                                 aria-labelledby="heading_{{ group.specialist.id }}" 
+                                 data-bs-parent="#specialistsAccordion">
+                                <div class="accordion-body">
+                                    <div class="row g-2 g-md-3">
+                                        {% for slot in group.slots %}
+                                        <div class="col-12 col-sm-6 col-md-4 mb-2 mb-md-3">
+                                            <div class="form-check">
+                                                <input class="form-check-input slot-radio" type="radio" name="selected_slot"
+                                                       id="slot_{{ group.specialist.id }}_{{ forloop.counter }}"
+                                                       value="{{ slot.start_time|date:'Y-m-d\TH:i:s' }}|{{ slot.specialist.id }}" required>
+                                                <label class="form-check-label card border-success" 
+                                                       for="slot_{{ group.specialist.id }}_{{ forloop.counter }}" 
+                                                       style="cursor: pointer; width: 100%;">
+                                                    <div class="card-body p-2">
+                                                        <strong><i class="bi bi-clock"></i> {{ slot.start_time|time:"H:i" }}</strong><br>
+                                                        <small class="text-muted">
+                                                            {% if slot.available_cabinets|length > 1 %}
+                                                                <i class="bi bi-building"></i> Выберите кабинет ({{ slot.available_cabinets|length }} доступно)
+                                                            {% else %}
+                                                                <i class="bi bi-building"></i> {{ slot.cabinet.name }}
+                                                            {% endif %}
+                                                        </small>
+                                                    </div>
+                                                </label>
+                                            </div>
+                                            <!-- Выбор кабинета для этого слота -->
+                                            <div class="cabinet-selection mt-2" data-slot-id="slot_{{ group.specialist.id }}_{{ forloop.counter }}" style="display: none;">
+                                                <label class="form-label small"><i class="bi bi-building"></i> Выберите кабинет:</label>
+                                                <select class="form-select form-select-sm cabinet-select" data-slot-id="slot_{{ group.specialist.id }}_{{ forloop.counter }}" required>
+                                                    <option value="">-- Выберите кабинет --</option>
+                                                    {% for cabinet in slot.available_cabinets %}
+                                                    <option value="{{ cabinet.id }}">{{ cabinet.name }}</option>
+                                                    {% endfor %}
+                                                </select>
+                                            </div>
+                                        </div>
+                                        {% endfor %}
                                     </div>
-                                </label>
-                            </div>
-                            <!-- Выбор кабинета для этого слота -->
-                            <div class="cabinet-selection mt-2" id="cabinet_selection_{{ forloop.counter0 }}" style="display: none;">
-                                <label class="form-label small"><i class="bi bi-building"></i> Выберите кабинет:</label>
-                                <select class="form-select form-select-sm" name="cabinet_{{ forloop.counter0 }}" id="cabinet_{{ forloop.counter0 }}" required>
-                                    <option value="">-- Выберите кабинет --</option>
-                                    {% for cabinet in slot.available_cabinets %}
-                                    <option value="{{ cabinet.id }}">{{ cabinet.name }}</option>
-                                    {% endfor %}
-                                </select>
-                            </div>
-                        </div>
-                        {% empty %}
-                        <div class="col-12">
-                            <div class="alert alert-warning">
-                                <i class="bi bi-exclamation-triangle"></i>
-                                К сожалению, на выбранную дату нет доступных слотов.
+                                </div>
                             </div>
                         </div>
                         {% endfor %}
                     </div>
+                    {% else %}
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle"></i>
+                        К сожалению, на выбранную дату нет доступных слотов.
+                    </div>
+                    {% endif %}
 
-                    {% if slots %}
+                    {% if grouped_slots %}
                     <hr class="my-4">
 
                     <h5 class="h6 mb-3"><i class="bi bi-person-badge"></i> Данные гостя:</h5>
@@ -130,7 +154,7 @@ document.addEventListener('DOMContentLoaded', function() {
             // Скрываем все выборы кабинетов
             cabinetSelections.forEach(function(selection) {
                 selection.style.display = 'none';
-                const select = selection.querySelector('select');
+                const select = selection.querySelector('.cabinet-select');
                 if (select) {
                     select.removeAttribute('required');
                 }
@@ -138,11 +162,11 @@ document.addEventListener('DOMContentLoaded', function() {
             
             // Показываем выбор кабинета для выбранного слота
             if (this.checked) {
-                const slotIndex = this.getAttribute('data-slot-index');
-                const cabinetSelection = document.getElementById('cabinet_selection_' + slotIndex);
+                const slotId = this.id;
+                const cabinetSelection = document.querySelector('[data-slot-id="' + slotId + '"]');
                 if (cabinetSelection) {
                     cabinetSelection.style.display = 'block';
-                    const select = cabinetSelection.querySelector('select');
+                    const select = cabinetSelection.querySelector('.cabinet-select');
                     if (select) {
                         select.setAttribute('required', 'required');
                     }
@@ -161,8 +185,8 @@ document.addEventListener('DOMContentLoaded', function() {
             return false;
         }
         
-        const slotIndex = selectedSlot.getAttribute('data-slot-index');
-        const cabinetSelect = document.getElementById('cabinet_' + slotIndex);
+        const slotId = selectedSlot.id;
+        const cabinetSelect = document.querySelector('.cabinet-select[data-slot-id="' + slotId + '"]');
         
         if (cabinetSelect && cabinetSelect.value) {
             // Добавляем ID кабинета к значению слота

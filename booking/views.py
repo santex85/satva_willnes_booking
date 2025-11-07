@@ -362,8 +362,23 @@ def select_slot_view(request):
     # Используем функцию поиска слотов из utils.py
     available_slots = find_available_slots(date, service_variant)
     
+    # Группируем слоты по специалистам
+    slots_by_specialist = {}
+    for slot in available_slots:
+        specialist = slot['specialist']
+        if specialist.id not in slots_by_specialist:
+            slots_by_specialist[specialist.id] = {
+                'specialist': specialist,
+                'slots': []
+            }
+        slots_by_specialist[specialist.id]['slots'].append(slot)
+    
+    # Преобразуем в список и сортируем по имени специалиста
+    grouped_slots = sorted(slots_by_specialist.values(), key=lambda x: x['specialist'].full_name)
+    
     context = {
-        'slots': available_slots,
+        'slots': available_slots,  # Оставляем для обратной совместимости
+        'grouped_slots': grouped_slots,  # Новая структура для группировки
         'form_data': request.GET,
         'service_variant': service_variant,
         'date': date
@@ -777,32 +792,79 @@ def update_booking_time_view(request):
         else:
             new_start_time = naive_dt
         
-        # Проверяем доступность нового слота
-        date = new_start_time.date()
-        available_slots = find_available_slots(date, booking.service_variant)
+        # Проверяем доступность нового слота используя check_booking_conflicts
+        # Это исключает само изменяемое бронирование из проверки
+        from .utils import check_booking_conflicts
         
-        # Ищем подходящий слот
-        suitable_slot = None
-        for slot in available_slots:
-            slot_start = slot['start_time']
-            if (slot_start.year == new_start_time.year and
-                slot_start.month == new_start_time.month and
-                slot_start.day == new_start_time.day and
-                slot_start.hour == new_start_time.hour and
-                slot_start.minute == new_start_time.minute and
-                slot['specialist'].id == booking.specialist.id):
-                suitable_slot = slot
-                break
+        # Сначала проверяем текущий кабинет
+        conflicts = check_booking_conflicts(
+            start_time=new_start_time,
+            service_variant=booking.service_variant,
+            specialist=booking.specialist,
+            cabinet=booking.cabinet,
+            exclude_booking_id=booking.id
+        )
         
-        if not suitable_slot:
-            return JsonResponse({'error': 'Новый слот недоступен или занят'}, status=400)
+        new_cabinet = booking.cabinet
+        
+        # Если текущий кабинет недоступен, ищем доступный
+        if conflicts:
+            logger.debug(f"Current cabinet {booking.cabinet.id} not available, searching for alternatives")
+            # Получаем доступные слоты для поиска альтернативного кабинета
+            date = new_start_time.date()
+            available_slots = find_available_slots(date, booking.service_variant)
+            
+            # Ищем слот с нужным временем и специалистом
+            suitable_slot = None
+            for slot in available_slots:
+                slot_start = slot['start_time']
+                if (slot_start.year == new_start_time.year and
+                    slot_start.month == new_start_time.month and
+                    slot_start.day == new_start_time.day and
+                    slot_start.hour == new_start_time.hour and
+                    slot_start.minute == new_start_time.minute and
+                    slot['specialist'].id == booking.specialist.id):
+                    suitable_slot = slot
+                    break
+            
+            if not suitable_slot:
+                logger.warning(f"No suitable slot found for booking {booking.id} at {new_start_time}")
+                return JsonResponse({'error': 'Новый слот недоступен или занят'}, status=400)
+            
+            # Проверяем доступные кабинеты из слота
+            available_cabinets = suitable_slot.get('available_cabinets', [])
+            if not available_cabinets and suitable_slot.get('cabinet'):
+                available_cabinets = [suitable_slot['cabinet']]
+            
+            # Ищем доступный кабинет
+            found_cabinet = None
+            for cab in available_cabinets:
+                cab_conflicts = check_booking_conflicts(
+                    start_time=new_start_time,
+                    service_variant=booking.service_variant,
+                    specialist=booking.specialist,
+                    cabinet=cab,
+                    exclude_booking_id=booking.id
+                )
+                if not cab_conflicts:
+                    found_cabinet = cab
+                    break
+            
+            if not found_cabinet:
+                logger.warning(f"No available cabinet found for booking {booking.id} at {new_start_time}")
+                return JsonResponse({'error': 'Нет доступных кабинетов для выбранного времени'}, status=400)
+            
+            new_cabinet = found_cabinet
+            logger.info(f"Using alternative cabinet {new_cabinet.id} for booking {booking.id}")
+        else:
+            logger.debug(f"Current cabinet {booking.cabinet.id} is available for new time")
         
         # Обновляем бронирование
         booking.start_time = new_start_time
-        booking.cabinet = suitable_slot['cabinet']
+        booking.cabinet = new_cabinet
         booking.save()
         
-        logger.info(f"Booking time updated: {booking.id} by {request.user.username}")
+        logger.info(f"Booking time updated: {booking.id} by {request.user.username}, new time: {new_start_time}, cabinet: {new_cabinet.id}")
         return JsonResponse({
             'success': True,
             'message': 'Время бронирования успешно изменено'

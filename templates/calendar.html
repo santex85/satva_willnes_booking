@@ -5,8 +5,24 @@
 {% block extra_css %}
 <link href="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.0/main.min.css" rel="stylesheet">
 <style>
+    .calendar-page {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 0 1.5rem 2rem;
+        transition: max-width 0.3s ease, padding 0.3s ease;
+    }
+    .calendar-page.calendar-wide {
+        max-width: calc(100vw - 2rem);
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
+    @media (min-width: 1400px) {
+        .calendar-page:not(.calendar-wide) {
+            max-width: 1400px;
+        }
+    }
     #calendar {
-        max-width: 100%;
+        width: 100%;
         margin: 0 auto;
     }
     .fc-event-title {
@@ -103,16 +119,23 @@
 {% endblock %}
 
 {% block content %}
-<div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-3 mb-md-4">
+<div id="calendar-page" class="calendar-page">
+<div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-3 mb-md-4 gap-2">
     <h1 class="h3 mb-2 mb-md-0"><i class="bi bi-calendar-week"></i> Календарь бронирований</h1>
-    <a href="{% url 'select_service' %}" class="btn btn-primary">
-        <i class="bi bi-plus-circle"></i> <span class="d-none d-sm-inline">Создать бронирование</span><span class="d-sm-none">Создать</span>
-    </a>
+    <div class="d-flex flex-column flex-sm-row gap-2 w-100 w-md-auto">
+        <button type="button" id="toggle-width-btn" class="btn btn-outline-secondary flex-fill flex-sm-grow-0" onclick="toggleCalendarWidth()">
+            <i class="bi bi-arrows-expand"></i> Широкий режим
+        </button>
+        <a href="{% url 'select_service' %}" class="btn btn-primary flex-fill flex-sm-grow-0">
+            <i class="bi bi-plus-circle"></i> <span class="d-none d-sm-inline">Создать бронирование</span><span class="d-sm-none">Создать</span>
+        </a>
+    </div>
 </div>
 
-<div class="card">
+<div class="card shadow-sm">
     <div class="card-body">
-        <div class="btn-group mb-3 w-100 d-md-inline-flex" role="group">
+        <div class="d-flex flex-column flex-lg-row justify-content-between align-items-start align-items-lg-center gap-2 mb-3">
+        <div class="btn-group w-100 w-lg-auto" role="group">
             <button type="button" class="btn btn-outline-primary" onclick="switchView('dayGridMonth')">
                 <i class="bi bi-calendar3"></i> <span class="d-none d-sm-inline">Месяц</span>
             </button>
@@ -122,6 +145,10 @@
             <button type="button" class="btn btn-outline-primary" onclick="switchView('timeGridDay')">
                 <i class="bi bi-calendar-day"></i> <span class="d-none d-sm-inline">День</span>
             </button>
+        </div>
+        <div class="text-muted small fst-italic">
+            Режим просмотра: <span id="current-view-label">День</span>
+        </div>
         </div>
 
         <!-- Легенда кабинетов -->
@@ -136,6 +163,7 @@
 
         <div id="calendar"></div>
     </div>
+</div>
 </div>
 
 <!-- Модальное окно для быстрого создания бронирования -->
@@ -225,6 +253,7 @@
     let calendar;
     let currentView = 'timeGridDay';
     let currentResourceType = 'specialist';
+    let isWideMode = false;
 
     // Получаем CSRF token
     function getCookie(name) {
@@ -245,6 +274,8 @@
 
     document.addEventListener('DOMContentLoaded', function() {
         initCalendar();
+        updateViewLabel();
+        updateWidthButton();
     });
 
     function initCalendar() {
@@ -307,12 +338,47 @@
         });
 
         calendar.render();
+        updateViewLabel();
+        setTimeout(() => calendar.updateSize(), 100);
     }
 
     function switchView(viewType) {
         currentView = viewType;
         calendar.destroy();
         initCalendar();
+        updateViewLabel();
+    }
+
+    function updateViewLabel() {
+        const viewLabel = document.getElementById('current-view-label');
+        if (!viewLabel) return;
+        const viewNames = {
+            dayGridMonth: 'Месяц',
+            timeGridWeek: 'Неделя',
+            timeGridDay: 'День'
+        };
+        viewLabel.textContent = viewNames[currentView] || currentView;
+    }
+
+    function updateWidthButton() {
+        const btn = document.getElementById('toggle-width-btn');
+        if (!btn) return;
+        if (isWideMode) {
+            btn.innerHTML = '<i class="bi bi-arrows-collapse"></i> Стандартный режим';
+        } else {
+            btn.innerHTML = '<i class="bi bi-arrows-expand"></i> Широкий режим';
+        }
+    }
+
+    function toggleCalendarWidth() {
+        const container = document.getElementById('calendar-page');
+        if (!container) return;
+        container.classList.toggle('calendar-wide');
+        isWideMode = container.classList.contains('calendar-wide');
+        updateWidthButton();
+        if (calendar) {
+            setTimeout(() => calendar.updateSize(), 200);
+        }
     }
 
     function openQuickBookingModal(date, dateStr) {

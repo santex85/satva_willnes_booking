@@ -154,9 +154,6 @@
                 <i class="bi bi-calendar-day"></i> <span class="d-none d-sm-inline">День</span>
             </button>
         </div>
-        <div class="text-muted small fst-italic">
-            Режим просмотра: <span id="current-view-label">День</span>
-        </div>
         </div>
 
         <!-- Легенда кабинетов -->
@@ -282,7 +279,6 @@
 
     document.addEventListener('DOMContentLoaded', function() {
         initCalendar();
-        updateViewLabel();
         updateWidthButton();
     });
 
@@ -351,7 +347,6 @@
         });
 
         calendar.render();
-        updateViewLabel();
         setTimeout(() => calendar.updateSize(), 100);
     }
 
@@ -359,18 +354,6 @@
         currentView = viewType;
         calendar.destroy();
         initCalendar();
-        updateViewLabel();
-    }
-
-    function updateViewLabel() {
-        const viewLabel = document.getElementById('current-view-label');
-        if (!viewLabel) return;
-        const viewNames = {
-            dayGridMonth: 'Месяц',
-            timeGridWeek: 'Неделя',
-            timeGridDay: 'День'
-        };
-        viewLabel.textContent = viewNames[currentView] || currentView;
     }
 
     function updateWidthButton() {

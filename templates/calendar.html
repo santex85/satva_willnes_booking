@@ -224,7 +224,7 @@
                     <input type="hidden" id="start_datetime" name="start_datetime" value="">
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="button" class="btn btn-secondary" data-action="quick-booking-cancel">Отмена</button>
                     <button type="submit" class="btn btn-primary">
                         <i class="bi bi-check-circle"></i> Создать
                     </button>
@@ -258,7 +258,12 @@
     let calendar;
     let currentView = 'timeGridDay';
     let currentResourceType = 'specialist';
+    const WIDTH_MODE_STORAGE_KEY = 'calendarWidthMode';
+    const VIEW_STORAGE_KEY = 'calendarView';
+    const DATE_STORAGE_KEY = 'calendarDate';
     let currentWidthMode = 'standard'; // standard | wide | fullscreen
+    let currentDate = null;
+    let quickBookingModal = null;
 
     // Получаем CSRF token
     function getCookie(name) {
@@ -278,8 +283,12 @@
     const csrftoken = getCookie('csrftoken');
 
     document.addEventListener('DOMContentLoaded', function() {
+        restoreWidthMode();
+        applyWidthModeClass();
+        restoreViewState();
         initCalendar();
         updateWidthButton();
+        initQuickBookingModal();
     });
 
     function initCalendar() {
@@ -287,6 +296,7 @@
 
         calendar = new FullCalendar.Calendar(calendarEl, {
             initialView: currentView,
+            initialDate: currentDate || undefined,
             locale: 'ru',
             headerToolbar: {
                 left: 'prev,next today',
@@ -308,6 +318,7 @@
             slotDuration: '00:30:00',
             eventClick: function(info) {
                 // Открываем детальную страницу бронирования
+                saveViewState();
                 window.location.href = '/booking/' + info.event.id + '/';
             },
             dateClick: function(info) {
@@ -340,6 +351,9 @@
                 // Обработка перетаскивания события
                 handleEventDrop(info);
             },
+            datesSet: function() {
+                saveViewState();
+            },
             eventStartEditable: true,
             eventDurationEditable: false,  // Запрещаем изменение длительности через drag
             editable: true,
@@ -347,13 +361,18 @@
         });
 
         calendar.render();
+        if (currentDate) {
+            calendar.gotoDate(currentDate);
+        }
         setTimeout(() => calendar.updateSize(), 100);
     }
 
     function switchView(viewType) {
         currentView = viewType;
-        calendar.destroy();
-        initCalendar();
+        if (calendar) {
+            calendar.changeView(viewType);
+            saveViewState();
+        }
     }
 
     function updateWidthButton() {
@@ -372,21 +391,51 @@
         const container = document.getElementById('calendar-page');
         if (!container) return;
 
-        container.classList.remove('calendar-wide', 'calendar-fullscreen');
-
         if (currentWidthMode === 'standard') {
-            container.classList.add('calendar-wide');
             currentWidthMode = 'wide';
         } else if (currentWidthMode === 'wide') {
-            container.classList.add('calendar-fullscreen');
             currentWidthMode = 'fullscreen';
         } else {
             currentWidthMode = 'standard';
         }
 
+        applyWidthModeClass();
         updateWidthButton();
+        saveWidthMode();
         if (calendar) {
             setTimeout(() => calendar.updateSize(), 200);
+        }
+    }
+
+    function applyWidthModeClass() {
+        const container = document.getElementById('calendar-page');
+        if (!container) return;
+
+        container.classList.remove('calendar-wide', 'calendar-fullscreen');
+
+        if (currentWidthMode === 'wide') {
+            container.classList.add('calendar-wide');
+        } else if (currentWidthMode === 'fullscreen') {
+            container.classList.add('calendar-fullscreen');
+        }
+    }
+
+    function saveWidthMode() {
+        try {
+            localStorage.setItem(WIDTH_MODE_STORAGE_KEY, currentWidthMode);
+        } catch (e) {
+            console.warn('Unable to save width mode preference', e);
+        }
+    }
+
+    function restoreWidthMode() {
+        try {
+            const savedMode = localStorage.getItem(WIDTH_MODE_STORAGE_KEY);
+            if (savedMode && ['standard', 'wide', 'fullscreen'].includes(savedMode)) {
+                currentWidthMode = savedMode;
+            }
+        } catch (e) {
+            console.warn('Unable to read width mode preference', e);
         }
     }
 
@@ -438,8 +487,10 @@
         document.getElementById('cabinet').innerHTML = '<option value="">Сначала выберите услугу, специалиста и время</option>';
 
         // Показываем модальное окно
-        const modal = new bootstrap.Modal(document.getElementById('quickBookingModal'));
-        modal.show();
+        if (!quickBookingModal) {
+            quickBookingModal = new bootstrap.Modal(document.getElementById('quickBookingModal'));
+        }
+        quickBookingModal.show();
         
         // Загружаем кабинеты автоматически при показе модального окна, если услуга и специалист уже выбраны
         const modalElement = document.getElementById('quickBookingModal');
@@ -455,6 +506,34 @@
             }, 100);
         };
         modalElement.addEventListener('shown.bs.modal', handleModalShown, { once: true });
+    }
+
+    function initQuickBookingModal() {
+        const modalElement = document.getElementById('quickBookingModal');
+        if (!modalElement) return;
+
+        quickBookingModal = new bootstrap.Modal(modalElement);
+
+        const cancelButton = modalElement.querySelector('[data-action="quick-booking-cancel"]');
+        if (cancelButton) {
+            cancelButton.addEventListener('click', function() {
+                hideQuickBookingModal();
+            });
+        }
+    }
+
+    function hideQuickBookingModal() {
+        if (quickBookingModal) {
+            quickBookingModal.hide();
+            return;
+        }
+
+        const modalElement = document.getElementById('quickBookingModal');
+        if (!modalElement) return;
+        const instance = bootstrap.Modal.getInstance(modalElement);
+        if (instance) {
+            instance.hide();
+        }
     }
 
     function handleEventDrop(info) {
@@ -508,6 +587,37 @@
             // Обновляем календарь
             calendar.refetchEvents();
         });
+    }
+
+    function saveViewState() {
+        if (!calendar) return;
+        try {
+            currentView = calendar.view.type;
+            const currentMoment = calendar.getDate();
+            currentDate = currentMoment;
+            localStorage.setItem(VIEW_STORAGE_KEY, currentView);
+            localStorage.setItem(DATE_STORAGE_KEY, currentMoment.toISOString());
+        } catch (e) {
+            console.warn('Unable to persist calendar view state', e);
+        }
+    }
+
+    function restoreViewState() {
+        try {
+            const savedView = localStorage.getItem(VIEW_STORAGE_KEY);
+            if (savedView && ['dayGridMonth', 'timeGridWeek', 'timeGridDay'].includes(savedView)) {
+                currentView = savedView;
+            }
+            const savedDate = localStorage.getItem(DATE_STORAGE_KEY);
+            if (savedDate) {
+                const parsedDate = new Date(savedDate);
+                if (!isNaN(parsedDate.getTime())) {
+                    currentDate = parsedDate;
+                }
+            }
+        } catch (e) {
+            console.warn('Unable to restore calendar view state', e);
+        }
     }
 
     function showResultModal(title, message, isSuccess) {
@@ -629,7 +739,7 @@
             submitButton.innerHTML = '<i class="bi bi-check-circle"></i> Создать';
 
             // Закрываем модальное окно формы
-            bootstrap.Modal.getInstance(document.getElementById('quickBookingModal')).hide();
+            hideQuickBookingModal();
 
             // Показываем результат
             const resultModal = new bootstrap.Modal(document.getElementById('resultModal'));
@@ -659,7 +769,7 @@
             submitButton.disabled = false;
             submitButton.innerHTML = '<i class="bi bi-check-circle"></i> Создать';
 
-            bootstrap.Modal.getInstance(document.getElementById('quickBookingModal')).hide();
+            hideQuickBookingModal();
 
             const resultModal = new bootstrap.Modal(document.getElementById('resultModal'));
             document.getElementById('resultTitle').textContent = 'Ошибка';

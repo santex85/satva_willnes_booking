@@ -92,6 +92,7 @@
                         <div class="col-12 col-md-6">
                             {{ form.cabinet.label_tag }}
                             {{ form.cabinet }}
+            <div class="form-text text-muted" id="cabinet-help-text" data-default-text="Будет выбран автоматически, если доступен">Будет выбран автоматически, если доступен</div>
                             {% if form.cabinet.errors %}
                                 <div class="text-danger">{{ form.cabinet.errors }}</div>
                             {% endif %}
@@ -171,8 +172,23 @@ document.addEventListener('DOMContentLoaded', function() {
     const cabinetSelect = document.getElementById('id_cabinet');
     const validationMessage = document.getElementById('validation_message');
     const startDatetimeValidation = document.getElementById('start_datetime_validation');
+    const cabinetHelpText = document.getElementById('cabinet-help-text');
+    const cabinetHelpDefault = cabinetHelpText ? (cabinetHelpText.dataset.defaultText || cabinetHelpText.textContent) : '';
     
     let validationTimeout = null;
+
+    function setCabinetHelp(message, type = 'muted') {
+        if (!cabinetHelpText) return;
+        cabinetHelpText.textContent = message;
+        cabinetHelpText.classList.remove('text-muted', 'text-primary', 'text-danger');
+        if (type === 'loading') {
+            cabinetHelpText.classList.add('text-primary');
+        } else if (type === 'error') {
+            cabinetHelpText.classList.add('text-danger');
+        } else {
+            cabinetHelpText.classList.add('text-muted');
+        }
+    }
 
     // Функция загрузки доступных кабинетов
     function loadAvailableCabinets() {
@@ -182,13 +198,25 @@ document.addEventListener('DOMContentLoaded', function() {
 
         if (!serviceVariantId || !specialistId || !startDatetime) {
             cabinetSelect.innerHTML = '<option value="">Сначала выберите услугу, специалиста и время</option>';
+            setCabinetHelp(cabinetHelpDefault);
             return;
         }
 
         // Показываем загрузку
         const currentCabinet = cabinetSelect.value;
-        cabinetSelect.innerHTML = '<option value="">Загрузка...</option>';
+        const selectedOption = cabinetSelect.options[cabinetSelect.selectedIndex];
+        const previousLabel = selectedOption ? selectedOption.textContent.trim() : '';
+
+        cabinetSelect.innerHTML = '';
+        const loadingOption = document.createElement('option');
+        loadingOption.value = currentCabinet || '';
+        loadingOption.selected = true;
+        loadingOption.textContent = previousLabel
+            ? `${previousLabel} (обновляем...)`
+            : 'Загрузка доступных кабинетов...';
+        cabinetSelect.appendChild(loadingOption);
         cabinetSelect.disabled = true;
+        setCabinetHelp('Обновляем список кабинетов...', 'loading');
 
         // Загружаем доступные кабинеты (исключаем текущее бронирование из проверки)
         const excludeBookingParam = bookingId ? `&exclude_booking_id=${bookingId}` : '';
@@ -198,6 +226,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 cabinetSelect.disabled = false;
                 if (data.error) {
                     cabinetSelect.innerHTML = `<option value="">${data.error}</option>`;
+                    setCabinetHelp(data.error, 'error');
                     return;
                 }
 
@@ -220,12 +249,15 @@ document.addEventListener('DOMContentLoaded', function() {
                         // Это может означать, что кабинет стал недоступен, но мы сохраняем выбор пользователя
                         console.warn('Current cabinet not found in available cabinets');
                     }
+                    setCabinetHelp(cabinetHelpDefault);
                 } else {
                     // Если нет доступных кабинетов, но был выбран кабинет, сохраняем его
                     if (currentCabinet) {
                         cabinetSelect.innerHTML = `<option value="${currentCabinet}" selected>Текущий кабинет (может быть недоступен)</option>`;
+                        setCabinetHelp('Текущий кабинет может быть недоступен для выбранного времени', 'error');
                     } else {
                         cabinetSelect.innerHTML = '<option value="">Нет доступных кабинетов</option>';
+                        setCabinetHelp('Свободные кабинеты не найдены для выбранного времени', 'error');
                     }
                 }
             })
@@ -233,6 +265,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 console.error('Error loading cabinets:', error);
                 cabinetSelect.disabled = false;
                 cabinetSelect.innerHTML = '<option value="">Ошибка загрузки</option>';
+                setCabinetHelp('Не удалось загрузить кабинеты. Попробуйте позже.', 'error');
             });
     }
 

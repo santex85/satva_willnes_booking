@@ -3,7 +3,7 @@ from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse, JsonResponse
 from django.views.decorators.http import require_POST
 from django.views.generic import DeleteView
-from django.urls import reverse_lazy
+from django.urls import reverse, reverse_lazy
 from django.utils.decorators import method_decorator
 from django.forms import modelformset_factory
 from django.db.models import Count, Sum
@@ -527,7 +527,7 @@ def booking_detail_view(request, pk):
                 form.save()
                 logger.info(f"Booking {booking.id} updated by {request.user.username}")
                 messages.success(request, 'Бронирование успешно обновлено')
-                return redirect('booking_detail', pk=booking.pk)
+                return redirect('calendar')
             except Exception as e:
                 logger.error(f"Error updating booking {booking.id}: {e}", exc_info=True)
                 messages.error(request, 'Ошибка при обновлении бронирования. Попробуйте еще раз.')
@@ -932,7 +932,8 @@ def manage_schedules_view(request):
             for obj in formset.deleted_objects:
                 obj.delete()
             messages.success(request, 'Расписание успешно сохранено')
-            return redirect(f'manage_schedules?specialist={specialist.id}')
+            redirect_url = reverse('manage_schedules')
+            return redirect(f'{redirect_url}?specialist={specialist.id}')
     else:
         if specialist:
             formset = SpecialistScheduleFormSet(queryset=SpecialistSchedule.objects.filter(specialist=specialist))

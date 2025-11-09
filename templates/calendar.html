@@ -223,7 +223,7 @@
 <script src="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.0/locales/ru.js"></script>
 <script>
     let calendar;
-    let currentView = 'timeGridWeek';
+    let currentView = 'timeGridDay';
     let currentResourceType = 'specialist';
 
     // Получаем CSRF token
@@ -288,6 +288,12 @@
                 } else {
                     // В временных видах (неделя, день) используем точное время клика
                     openQuickBookingModal(info.date, info.dateStr);
+                }
+            },
+            eventDidMount: function(info) {
+                const currentRight = info.el.style.right;
+                if (!currentRight || currentRight === '0%') {
+                    info.el.style.right = '25%';
                 }
             },
             eventDrop: function(info) {

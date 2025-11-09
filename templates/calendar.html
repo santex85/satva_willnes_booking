@@ -322,9 +322,14 @@
                 }
             },
             eventDidMount: function(info) {
-                const currentRight = info.el.style.right;
-                if (!currentRight || currentRight === '0%') {
-                    info.el.style.right = '25%';
+                const viewType = info.view ? info.view.type : calendar.view.type;
+                if (viewType === 'timeGridWeek' || viewType === 'timeGridDay') {
+                    const currentRight = info.el.style.right;
+                    if (!currentRight || currentRight === '0%') {
+                        info.el.style.right = '25%';
+                    }
+                } else {
+                    info.el.style.right = '';
                 }
             },
             eventDrop: function(info) {

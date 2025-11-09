@@ -144,13 +144,13 @@
     <div class="card-body">
         <div class="d-flex flex-column flex-lg-row justify-content-between align-items-start align-items-lg-center gap-2 mb-3">
         <div class="btn-group w-100 w-lg-auto" role="group">
-            <button type="button" class="btn btn-outline-primary" onclick="switchView('dayGridMonth')">
+            <button type="button" class="btn btn-outline-primary" data-view-switch="dayGridMonth" onclick="switchView('dayGridMonth')">
                 <i class="bi bi-calendar3"></i> <span class="d-none d-sm-inline">Месяц</span>
             </button>
-            <button type="button" class="btn btn-outline-primary" onclick="switchView('timeGridWeek')">
+            <button type="button" class="btn btn-outline-primary" data-view-switch="timeGridWeek" onclick="switchView('timeGridWeek')">
                 <i class="bi bi-grid-3x3"></i> <span class="d-none d-sm-inline">Неделя</span>
             </button>
-            <button type="button" class="btn btn-outline-primary" onclick="switchView('timeGridDay')">
+            <button type="button" class="btn btn-outline-primary" data-view-switch="timeGridDay" onclick="switchView('timeGridDay')">
                 <i class="bi bi-calendar-day"></i> <span class="d-none d-sm-inline">День</span>
             </button>
         </div>
@@ -286,6 +286,7 @@
         restoreWidthMode();
         applyWidthModeClass();
         restoreViewState();
+        updateViewSwitcherButtons();
         initCalendar();
         updateWidthButton();
         initQuickBookingModal();
@@ -301,7 +302,7 @@
             headerToolbar: {
                 left: 'prev,next today',
                 center: 'title',
-                right: 'dayGridMonth,timeGridWeek,timeGridDay'
+                right: ''
             },
             // Адаптивность для мобильных устройств
             height: 'auto',
@@ -353,6 +354,7 @@
             },
             datesSet: function() {
                 saveViewState();
+                updateViewSwitcherButtons();
             },
             eventStartEditable: true,
             eventDurationEditable: false,  // Запрещаем изменение длительности через drag
@@ -372,6 +374,7 @@
         if (calendar) {
             calendar.changeView(viewType);
             saveViewState();
+            updateViewSwitcherButtons();
         }
     }
 
@@ -385,6 +388,20 @@
         };
         const mode = modes[currentWidthMode] || modes.standard;
         btn.innerHTML = `<i class="${mode.icon}"></i> ${mode.text}`;
+    }
+
+    function updateViewSwitcherButtons() {
+        const buttons = document.querySelectorAll('[data-view-switch]');
+        buttons.forEach(button => {
+            const targetView = button.getAttribute('data-view-switch');
+            if (targetView === currentView) {
+                button.classList.add('active', 'btn-primary');
+                button.classList.remove('btn-outline-primary');
+            } else {
+                button.classList.remove('active', 'btn-primary');
+                button.classList.add('btn-outline-primary');
+            }
+        });
     }
 
     function toggleCalendarWidth() {

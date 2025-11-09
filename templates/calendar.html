@@ -16,8 +16,16 @@
         padding-left: 1rem;
         padding-right: 1rem;
     }
+    .calendar-page.calendar-fullscreen {
+        max-width: 100vw;
+        width: 100vw;
+        margin-left: calc((100vw - 100%) / -2);
+        margin-right: calc((100vw - 100%) / -2);
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
     @media (min-width: 1400px) {
-        .calendar-page:not(.calendar-wide) {
+        .calendar-page:not(.calendar-wide):not(.calendar-fullscreen) {
             max-width: 1400px;
         }
     }
@@ -253,7 +261,7 @@
     let calendar;
     let currentView = 'timeGridDay';
     let currentResourceType = 'specialist';
-    let isWideMode = false;
+    let currentWidthMode = 'standard'; // standard | wide | fullscreen
 
     // Получаем CSRF token
     function getCookie(name) {
@@ -368,18 +376,31 @@
     function updateWidthButton() {
         const btn = document.getElementById('toggle-width-btn');
         if (!btn) return;
-        if (isWideMode) {
-            btn.innerHTML = '<i class="bi bi-arrows-collapse"></i> Стандартный режим';
-        } else {
-            btn.innerHTML = '<i class="bi bi-arrows-expand"></i> Широкий режим';
-        }
+        const modes = {
+            standard: { text: 'Широкий режим', icon: 'bi bi-arrows-expand' },
+            wide: { text: 'Полноэкр.', icon: 'bi bi-arrows-fullscreen' },
+            fullscreen: { text: 'Стандартный режим', icon: 'bi bi-arrows-collapse' }
+        };
+        const mode = modes[currentWidthMode] || modes.standard;
+        btn.innerHTML = `<i class="${mode.icon}"></i> ${mode.text}`;
     }
 
     function toggleCalendarWidth() {
         const container = document.getElementById('calendar-page');
         if (!container) return;
-        container.classList.toggle('calendar-wide');
-        isWideMode = container.classList.contains('calendar-wide');
+
+        container.classList.remove('calendar-wide', 'calendar-fullscreen');
+
+        if (currentWidthMode === 'standard') {
+            container.classList.add('calendar-wide');
+            currentWidthMode = 'wide';
+        } else if (currentWidthMode === 'wide') {
+            container.classList.add('calendar-fullscreen');
+            currentWidthMode = 'fullscreen';
+        } else {
+            currentWidthMode = 'standard';
+        }
+
         updateWidthButton();
         if (calendar) {
             setTimeout(() => calendar.updateSize(), 200);

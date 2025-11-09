@@ -142,18 +142,41 @@
 
 <div class="card shadow-sm">
     <div class="card-body">
-        <div class="d-flex flex-column flex-lg-row justify-content-between align-items-start align-items-lg-center gap-2 mb-3">
-        <div class="btn-group w-100 w-lg-auto" role="group">
-            <button type="button" class="btn btn-outline-primary" data-view-switch="dayGridMonth" onclick="switchView('dayGridMonth')">
-                <i class="bi bi-calendar3"></i> <span class="d-none d-sm-inline">Месяц</span>
-            </button>
-            <button type="button" class="btn btn-outline-primary" data-view-switch="timeGridWeek" onclick="switchView('timeGridWeek')">
-                <i class="bi bi-grid-3x3"></i> <span class="d-none d-sm-inline">Неделя</span>
-            </button>
-            <button type="button" class="btn btn-outline-primary" data-view-switch="timeGridDay" onclick="switchView('timeGridDay')">
-                <i class="bi bi-calendar-day"></i> <span class="d-none d-sm-inline">День</span>
-            </button>
-        </div>
+        <div class="d-flex flex-column flex-xl-row justify-content-between align-items-start align-items-xl-center gap-3 mb-3">
+            <div class="d-flex flex-wrap align-items-center gap-2">
+                <div class="btn-group" role="group" aria-label="Навигация по календарю">
+                    <button type="button" class="btn btn-outline-secondary" id="calendar-prev-btn">
+                        <i class="bi bi-chevron-left"></i>
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary" id="calendar-today-btn">
+                        Сегодня
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary" id="calendar-next-btn">
+                        <i class="bi bi-chevron-right"></i>
+                    </button>
+                </div>
+                <div id="calendar-current-range" class="fw-semibold text-nowrap"></div>
+            </div>
+            <div class="btn-group w-100 w-xl-auto" role="group">
+                <button type="button" class="btn btn-outline-primary" data-view-switch="dayGridMonth" onclick="switchView('dayGridMonth')">
+                    <i class="bi bi-calendar3"></i> <span class="d-none d-sm-inline">Месяц</span>
+                </button>
+                <button type="button" class="btn btn-outline-primary" data-view-switch="timeGridWeek" onclick="switchView('timeGridWeek')">
+                    <i class="bi bi-grid-3x3"></i> <span class="d-none d-sm-inline">Неделя</span>
+                </button>
+                <button type="button" class="btn btn-outline-primary" data-view-switch="timeGridDay" onclick="switchView('timeGridDay')">
+                    <i class="bi bi-calendar-day"></i> <span class="d-none d-sm-inline">День</span>
+                </button>
+            </div>
+            <div class="d-flex flex-wrap align-items-center gap-2 w-100 w-xl-auto">
+                <select class="form-select" id="range-preset-select" aria-label="Диапазон календаря">
+                    <option value="auto">Стандартный режим</option>
+                    <option value="three_days">3 дня</option>
+                    <option value="two_weeks">2 недели</option>
+                    <option value="custom">Произвольный период...</option>
+                </select>
+                <button type="button" class="btn btn-outline-secondary" id="clear-range-btn">Сбросить</button>
+            </div>
         </div>
 
         <!-- Легенда кабинетов -->
@@ -234,6 +257,38 @@
     </div>
 </div>
 
+<!-- Модальное окно выбора произвольного диапазона -->
+<div class="modal fade" id="customRangeModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-calendar-range"></i> Произвольный период</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="customRangeForm">
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-12 col-sm-6">
+                            <label for="customRangeStart" class="form-label">Дата начала *</label>
+                            <input type="date" class="form-control" id="customRangeStart" name="start" required>
+                        </div>
+                        <div class="col-12 col-sm-6">
+                            <label for="customRangeEnd" class="form-label">Дата окончания *</label>
+                            <input type="date" class="form-control" id="customRangeEnd" name="end" required>
+                        </div>
+                    </div>
+                    <div class="alert alert-danger mt-3 d-none" id="customRangeError"></div>
+                    <small class="text-muted d-block mt-2">Диапазон не должен превышать 31 день.</small>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="submit" class="btn btn-primary">Применить</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <!-- Модальное окно для результатов -->
 <div class="modal fade" id="resultModal" tabindex="-1">
     <div class="modal-dialog">
@@ -261,9 +316,19 @@
     const WIDTH_MODE_STORAGE_KEY = 'calendarWidthMode';
     const VIEW_STORAGE_KEY = 'calendarView';
     const DATE_STORAGE_KEY = 'calendarDate';
+    const RANGE_STORAGE_KEY = 'calendarRangePreset';
+    const CUSTOM_RANGE_STORAGE_KEY = 'calendarCustomRange';
+    const RANGE_PRESETS = {
+        auto: null,
+        three_days: { view: 'timeGridThreeDay', label: '3 дня' },
+        two_weeks: { view: 'timeGridTwoWeek', label: '2 недели' }
+    };
     let currentWidthMode = 'standard'; // standard | wide | fullscreen
     let currentDate = null;
     let quickBookingModal = null;
+    let customRangeModal = null;
+    let currentRangePreset = 'auto';
+    let customRange = null;
 
     // Получаем CSRF token
     function getCookie(name) {
@@ -285,11 +350,15 @@
     document.addEventListener('DOMContentLoaded', function() {
         restoreWidthMode();
         applyWidthModeClass();
+        restoreRangePreset();
         restoreViewState();
         updateViewSwitcherButtons();
         initCalendar();
         updateWidthButton();
         initQuickBookingModal();
+        attachRangeControls();
+        updateRangeSelect();
+        updateCalendarTitle();
     });
 
     function initCalendar() {
@@ -299,10 +368,16 @@
             initialView: currentView,
             initialDate: currentDate || undefined,
             locale: 'ru',
-            headerToolbar: {
-                left: 'prev,next today',
-                center: 'title',
-                right: ''
+            headerToolbar: false,
+            views: {
+                timeGridThreeDay: {
+                    type: 'timeGrid',
+                    duration: { days: 3 }
+                },
+                timeGridTwoWeek: {
+                    type: 'timeGrid',
+                    duration: { days: 14 }
+                }
             },
             // Адаптивность для мобильных устройств
             height: 'auto',
@@ -355,6 +430,8 @@
             datesSet: function() {
                 saveViewState();
                 updateViewSwitcherButtons();
+                updateRangeSelect();
+                updateCalendarTitle();
             },
             eventStartEditable: true,
             eventDurationEditable: false,  // Запрещаем изменение длительности через drag
@@ -363,18 +440,22 @@
         });
 
         calendar.render();
-        if (currentDate) {
-            calendar.gotoDate(currentDate);
-        }
+        applyRangePreset(currentRangePreset, { initial: true, skipSave: true, skipSelectUpdate: true });
         setTimeout(() => calendar.updateSize(), 100);
     }
 
     function switchView(viewType) {
         currentView = viewType;
+        currentRangePreset = 'auto';
+        customRange = null;
         if (calendar) {
+            calendar.setOption('visibleRange', null);
             calendar.changeView(viewType);
             saveViewState();
+            saveRangeState();
+            updateRangeSelect();
             updateViewSwitcherButtons();
+            updateCalendarTitle();
         }
     }
 
@@ -392,9 +473,10 @@
 
     function updateViewSwitcherButtons() {
         const buttons = document.querySelectorAll('[data-view-switch]');
+        const highlightStandardButtons = currentRangePreset === 'auto' && ['dayGridMonth', 'timeGridWeek', 'timeGridDay'].includes(currentView);
         buttons.forEach(button => {
             const targetView = button.getAttribute('data-view-switch');
-            if (targetView === currentView) {
+            if (highlightStandardButtons && targetView === currentView) {
                 button.classList.add('active', 'btn-primary');
                 button.classList.remove('btn-outline-primary');
             } else {
@@ -622,7 +704,8 @@
     function restoreViewState() {
         try {
             const savedView = localStorage.getItem(VIEW_STORAGE_KEY);
-            if (savedView && ['dayGridMonth', 'timeGridWeek', 'timeGridDay'].includes(savedView)) {
+            const allowedViews = ['dayGridMonth', 'timeGridWeek', 'timeGridDay', 'timeGridThreeDay', 'timeGridTwoWeek'];
+            if (savedView && allowedViews.includes(savedView)) {
                 currentView = savedView;
             }
             const savedDate = localStorage.getItem(DATE_STORAGE_KEY);
@@ -795,6 +878,197 @@
             resultModal.show();
         });
     });
+
+    function applyRangePreset(preset, options = {}) {
+        const { initial = false, skipSave = false, skipSelectUpdate = false } = options;
+        if (!preset || !RANGE_PRESETS[preset]) {
+            if (preset !== 'custom') {
+                preset = 'auto';
+            }
+        }
+
+        if (preset === 'custom') {
+            if (initial && customRange) {
+                applyCustomRange(customRange.start, customRange.end, { skipSave: true, skipSelectUpdate });
+            } else if (!initial) {
+                openCustomRangeModal();
+            }
+            return;
+        }
+
+        currentRangePreset = preset;
+        customRange = null;
+        if (calendar) {
+            calendar.setOption('visibleRange', null);
+            const presetConfig = RANGE_PRESETS[preset];
+            if (presetConfig && presetConfig.view) {
+                if (calendar.view.type !== presetConfig.view) {
+                    calendar.changeView(presetConfig.view);
+                }
+            }
+        }
+
+        if (!skipSave) {
+            saveRangeState();
+        }
+
+        if (!skipSelectUpdate) {
+            updateRangeSelect();
+        }
+        updateViewSwitcherButtons();
+    }
+
+    function applyCustomRange(startDate, endDate, options = {}) {
+        const { skipSave = false, skipSelectUpdate = false } = options;
+        if (!calendar) return;
+
+        customRange = {
+            start: new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate()),
+            end: new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate())
+        };
+        currentRangePreset = 'custom';
+
+        const visibleRange = {
+            start: customRange.start,
+            end: addDays(customRange.end, 1)
+        };
+
+        calendar.setOption('visibleRange', visibleRange);
+        calendar.changeView('timeGridWeek', customRange.start);
+        saveViewState();
+
+        if (!skipSave) {
+            saveRangeState();
+        }
+
+        if (!skipSelectUpdate) {
+            updateRangeSelect();
+        }
+        updateViewSwitcherButtons();
+        updateCalendarTitle();
+    }
+
+    function shiftCustomRange(direction) {
+        if (!customRange || !calendar) return;
+        const diff = Math.max(1, differenceInDays(customRange.start, customRange.end) + 1);
+        const newStart = addDays(customRange.start, diff * direction);
+        const newEnd = addDays(customRange.end, diff * direction);
+        applyCustomRange(newStart, newEnd);
+    }
+
+    function navigateCalendar(direction) {
+        if (!calendar) return;
+        if (currentRangePreset === 'custom' && customRange) {
+            shiftCustomRange(direction);
+        } else {
+            if (direction < 0) {
+                calendar.prev();
+            } else {
+                calendar.next();
+            }
+        }
+    }
+
+    function goToToday() {
+        if (!calendar) return;
+        if (currentRangePreset === 'custom' && customRange) {
+            const diff = Math.max(1, differenceInDays(customRange.start, customRange.end) + 1);
+            const today = new Date();
+            const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+            const end = addDays(start, diff - 1);
+            applyCustomRange(start, end);
+        } else {
+            calendar.today();
+        }
+    }
+
+    function saveRangeState() {
+        try {
+            localStorage.setItem(RANGE_STORAGE_KEY, currentRangePreset);
+            if (currentRangePreset === 'custom' && customRange) {
+                localStorage.setItem(CUSTOM_RANGE_STORAGE_KEY, JSON.stringify({
+                    start: customRange.start.toISOString(),
+                    end: customRange.end.toISOString()
+                }));
+            } else {
+                localStorage.removeItem(CUSTOM_RANGE_STORAGE_KEY);
+            }
+        } catch (e) {
+            console.warn('Unable to store calendar range', e);
+        }
+    }
+
+    function restoreRangePreset() {
+        try {
+            const storedPreset = localStorage.getItem(RANGE_STORAGE_KEY);
+            if (storedPreset) {
+                if (storedPreset === 'custom') {
+                    const storedCustom = localStorage.getItem(CUSTOM_RANGE_STORAGE_KEY);
+                    if (storedCustom) {
+                        const parsed = JSON.parse(storedCustom);
+                        const start = parsed.start ? new Date(parsed.start) : null;
+                        const end = parsed.end ? new Date(parsed.end) : null;
+                        if (start && !isNaN(start) && end && !isNaN(end)) {
+                            customRange = {
+                                start: new Date(start.getFullYear(), start.getMonth(), start.getDate()),
+                                end: new Date(end.getFullYear(), end.getMonth(), end.getDate())
+                            };
+                            currentRangePreset = 'custom';
+                        }
+                    }
+                } else if (RANGE_PRESETS[storedPreset]) {
+                    currentRangePreset = storedPreset;
+                }
+            }
+        } catch (e) {
+            console.warn('Unable to restore calendar range', e);
+        }
+    }
+
+    function showCustomRangeError(message, errorBox) {
+        if (!errorBox) return;
+        errorBox.textContent = message;
+        errorBox.classList.remove('d-none');
+    }
+
+    function hideCustomRangeError(errorBox) {
+        if (!errorBox) return;
+        errorBox.textContent = '';
+        errorBox.classList.add('d-none');
+    }
+
+    function parseDateInput(value) {
+        if (!value) return null;
+        const parts = value.split('-');
+        if (parts.length !== 3) return null;
+        const year = Number(parts[0]);
+        const month = Number(parts[1]) - 1;
+        const day = Number(parts[2]);
+        const date = new Date(year, month, day);
+        return isNaN(date.getTime()) ? null : date;
+    }
+
+    function formatDateForInput(date) {
+        if (!date) return '';
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+
+    function addDays(date, days) {
+        const result = new Date(date);
+        result.setDate(result.getDate() + days);
+        return result;
+    }
+
+    function differenceInDays(start, end) {
+        const startTime = Date.UTC(start.getFullYear(), start.getMonth(), start.getDate());
+        const endTime = Date.UTC(end.getFullYear(), end.getMonth(), end.getDate());
+        const diff = Math.floor((endTime - startTime) / (24 * 60 * 60 * 1000));
+        return diff;
+    }
+
 </script>
 {% endblock %}
 

@@ -208,8 +208,12 @@
                         <label for="service_variant" class="form-label">Услуга *</label>
                         <select class="form-select" id="service_variant" name="service_variant" required>
                             <option value="">Выберите услугу</option>
-                            {% for service in services %}
-                            <option value="{{ service.id }}">{{ service.service.name }} - {{ service.name_suffix }}</option>
+                            {% for group in service_groups %}
+                            <optgroup label="{{ group.label }}">
+                                {% for service in group.variants %}
+                                <option value="{{ service.id }}">{{ service.service.name }} - {{ service.name_suffix }}</option>
+                                {% endfor %}
+                            </optgroup>
                             {% endfor %}
                         </select>
                     </div>

@@ -15,7 +15,20 @@
                         <label for="{{ form.service_variant.id_for_label }}" class="form-label">
                             <i class="bi bi-heart-pulse"></i> Выберите услугу
                         </label>
-                        {{ form.service_variant }}
+                        {% with selected=form.service_variant.value %}
+                        <select name="{{ form.service_variant.name }}" id="{{ form.service_variant.id_for_label }}" class="form-select" required>
+                            <option value="">---------</option>
+                            {% for group in service_groups %}
+                            <optgroup label="{{ group.label }}">
+                                {% for service in group.variants %}
+                                {% with service_id=service.id|stringformat:"s" %}
+                                <option value="{{ service.id }}" {% if selected|default:'' == service_id %}selected{% endif %}>{{ service.service.name }} - {{ service.name_suffix }}</option>
+                                {% endwith %}
+                                {% endfor %}
+                            </optgroup>
+                            {% endfor %}
+                        </select>
+                        {% endwith %}
                     </div>
                     <div class="mb-3">
                         <label for="{{ form.date.id_for_label }}" class="form-label">

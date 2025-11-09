@@ -16,7 +16,16 @@ from django.contrib.auth.models import User, Group
 from .models import Booking, SpecialistProfile, Cabinet, ServiceVariant, SpecialistSchedule, ScheduleTemplate
 from .decorators import admin_required, specialist_required
 from .utils import find_available_slots, check_booking_conflicts
-from .forms import SelectServiceForm, SpecialistScheduleForm, ReportForm, BookingEditForm, QuickBookingForm, SpecialistRegistrationForm
+from .forms import (
+    QuickBookingForm,
+    SelectServiceForm,
+    SpecialistScheduleForm,
+    ReportForm,
+    BookingEditForm,
+    SpecialistRegistrationForm
+)
+
+from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
@@ -50,11 +59,12 @@ def calendar_view(request):
     # Добавляем форму для модального окна
     quick_form = QuickBookingForm()
     
-    # Получаем список услуг для dropdown
-    services = ServiceVariant.objects.all().select_related('service').order_by('service__name', 'duration_minutes')
-    
-    # Получаем кабинеты для легенды
-    cabinets = Cabinet.objects.filter(is_active=True).order_by('id')
+    # Получаем список услуг и кабинетов
+    services_qs = ServiceVariant.objects.select_related('service').prefetch_related('service__required_cabinet_types').order_by('service__name', 'duration_minutes')
+    services = list(services_qs)
+    cabinets = list(Cabinet.objects.filter(is_active=True).select_related('cabinet_type').order_by('id'))
+    service_groups = build_service_variant_groups(services, cabinets)
+    quick_form.fields['service_variant'].queryset = services_qs
     cabinet_colors = generate_cabinet_colors(cabinets)
     
     # Добавляем цвета к кабинетам для отображения в легенде
@@ -69,7 +79,7 @@ def calendar_view(request):
     
     return render(request, 'calendar.html', {
         'quick_form': quick_form,
-        'services': services,
+        'service_groups': service_groups,
         'cabinets_with_colors': cabinets_with_colors
     })
 
@@ -307,7 +317,6 @@ def get_available_cabinets_view(request):
         
         # Используем check_booking_conflicts для проверки доступности кабинетов
         # Это позволяет исключить текущее бронирование из проверки
-        from .utils import check_booking_conflicts
         
         # Получаем все кабинеты подходящего типа для услуги
         service = service_variant.service
@@ -354,8 +363,18 @@ def select_service_view(request):
     Шаг 1: Выбор услуги и даты.
     """
     if request.method == 'GET':
+        services_qs = ServiceVariant.objects.select_related('service').prefetch_related('service__required_cabinet_types').order_by('service__name', 'duration_minutes')
+        services = list(services_qs)
+        cabinets = list(Cabinet.objects.filter(is_active=True).select_related('cabinet_type').order_by('cabinet_type__name', 'name'))
+        service_groups = build_service_variant_groups(services, cabinets)
+
         form = SelectServiceForm()
-        return render(request, 'booking/select_service.html', {'form': form})
+        form.fields['service_variant'].queryset = services_qs
+
+        return render(request, 'booking/select_service.html', {
+            'form': form,
+            'service_groups': service_groups
+        })
     return redirect('select_service')
 
 
@@ -824,7 +843,6 @@ def update_booking_time_view(request):
         
         # Проверяем доступность нового слота используя check_booking_conflicts
         # Это исключает само изменяемое бронирование из проверки
-        from .utils import check_booking_conflicts
         
         # Сначала проверяем текущий кабинет
         conflicts = check_booking_conflicts(
@@ -1128,3 +1146,51 @@ def specialist_register_view(request):
     return render(request, 'registration/specialist_register.html', {
         'form': form
     })
+
+
+def build_service_variant_groups(service_variants, cabinets):
+    """Группирует варианты услуг по типам кабинетов с указанием доступных кабинетов."""
+    cabinets_by_type = defaultdict(list)
+    for cabinet in cabinets:
+        cabinets_by_type[cabinet.cabinet_type_id].append(cabinet.name)
+    for names in cabinets_by_type.values():
+        names.sort(key=str.lower)
+
+    groups = {}
+
+    for variant in service_variants:
+        cabinet_types = list(variant.service.required_cabinet_types.all())
+        if cabinet_types:
+            for cabinet_type in cabinet_types:
+                key = ('type', cabinet_type.id)
+                entry = groups.setdefault(key, {
+                    'label': '',
+                    'variants': []
+                })
+                if not entry['label']:
+                    names = cabinets_by_type.get(cabinet_type.id, [])
+                    entry['label'] = f"{cabinet_type.name} ({', '.join(names)})" if names else cabinet_type.name
+                entry['variants'].append(variant)
+        else:
+            entry = groups.setdefault(('unassigned', None), {
+                'label': 'Без привязки к кабинету',
+                'variants': []
+            })
+            entry['variants'].append(variant)
+
+    # Удаляем дубликаты, сохраняя порядок
+    for entry in groups.values():
+        seen = set()
+        unique_variants = []
+        for variant in entry['variants']:
+            if variant.id not in seen:
+                unique_variants.append(variant)
+                seen.add(variant.id)
+        entry['variants'] = unique_variants
+
+    sorted_entries = sorted(
+        groups.items(),
+        key=lambda item: (item[0][0] == 'unassigned', item[1]['label'].lower())
+    )
+
+    return [entry for _, entry in sorted_entries]

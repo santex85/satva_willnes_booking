@@ -9,6 +9,7 @@ from django.forms import modelformset_factory
 from django.db.models import Count, Sum
 from django.utils import timezone
 from django.contrib import messages
+from django.template.loader import render_to_string
 import datetime
 import logging
 
@@ -539,27 +540,53 @@ def booking_detail_view(request, pk):
     """
     booking = get_object_or_404(Booking, pk=pk)
     
+    ajax_request = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+
     if request.method == 'POST':
         form = BookingEditForm(request.POST, instance=booking)
+    else:
+        form = BookingEditForm(instance=booking)
+
+    context = {
+        'booking': booking,
+        'form': form,
+        'form_action': reverse('booking_detail', args=[booking.pk]),
+        'calendar_url': reverse('calendar'),
+        'back_url': reverse('calendar'),
+        'validate_url': reverse('validate_booking_edit', args=[booking.pk]),
+        'available_cabinets_url': reverse('available_cabinets'),
+        'specialists_url': reverse('specialists_for_service'),
+        'show_back_button': not ajax_request,
+        'submit_via_ajax': ajax_request,
+    }
+
+    if request.method == 'POST':
         if form.is_valid():
             try:
                 form.save()
                 logger.info(f"Booking {booking.id} updated by {request.user.username}")
+                if ajax_request:
+                    return JsonResponse({'success': True, 'message': 'Бронирование успешно обновлено'})
                 messages.success(request, 'Бронирование успешно обновлено')
                 return redirect('calendar')
             except Exception as e:
                 logger.error(f"Error updating booking {booking.id}: {e}", exc_info=True)
+                if ajax_request:
+                    html = render_to_string('booking/partials/booking_edit_form.html', context, request=request)
+                    return JsonResponse({'success': False, 'html': html, 'error': 'Ошибка при обновлении бронирования. Попробуйте еще раз.'}, status=500)
                 messages.error(request, 'Ошибка при обновлении бронирования. Попробуйте еще раз.')
         else:
             logger.warning(f"Form validation errors for booking {booking.id}: {form.errors}")
+            if ajax_request:
+                html = render_to_string('booking/partials/booking_edit_form.html', context, request=request)
+                return JsonResponse({'success': False, 'html': html, 'errors': form.errors}, status=400)
             messages.error(request, 'Ошибка при обновлении бронирования. Проверьте введенные данные.')
-    else:
-        form = BookingEditForm(instance=booking)
     
-    return render(request, 'booking/booking_detail.html', {
-        'booking': booking,
-        'form': form
-    })
+    if ajax_request and request.method == 'GET':
+        html = render_to_string('booking/partials/booking_edit_form.html', context, request=request)
+        return JsonResponse({'success': True, 'html': html})
+
+    return render(request, 'booking/booking_detail.html', context)
 
 
 @admin_required

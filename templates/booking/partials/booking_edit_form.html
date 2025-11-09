@@ -1,0 +1,86 @@
+{% load i18n %}
+<form method="POST" action="{{ form_action|default:'' }}" class="booking-edit-form" data-booking-id="{{ booking.id }}" data-validate-url="{{ validate_url }}" data-available-cabinets-url="{{ available_cabinets_url }}" data-specialists-url="{{ specialists_url }}" {% if submit_via_ajax %}data-ajax="true"{% endif %}>
+    {% csrf_token %}
+
+    <div class="row g-3 mb-3">
+        <div class="col-12 col-md-6">
+            {{ form.guest_name.label_tag }}
+            {{ form.guest_name }}
+            {% if form.guest_name.errors %}
+                <div class="text-danger">{{ form.guest_name.errors }}</div>
+            {% endif %}
+        </div>
+        <div class="col-12 col-md-6">
+            {{ form.guest_room_number.label_tag }}
+            {{ form.guest_room_number }}
+            {% if form.guest_room_number.errors %}
+                <div class="text-danger">{{ form.guest_room_number.errors }}</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="row g-3 mb-3">
+        <div class="col-12 col-md-6">
+            {{ form.service_variant.label_tag }}
+            {{ form.service_variant }}
+            {% if form.service_variant.errors %}
+                <div class="text-danger">{{ form.service_variant.errors }}</div>
+            {% endif %}
+        </div>
+        <div class="col-12 col-md-6">
+            {{ form.specialist.label_tag }}
+            {{ form.specialist }}
+            {% if form.specialist.errors %}
+                <div class="text-danger">{{ form.specialist.errors }}</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="row g-3 mb-3">
+        <div class="col-12 col-md-6">
+            {{ form.start_datetime.label_tag }}
+            {{ form.start_datetime }}
+            {% if form.start_datetime.errors %}
+                <div class="text-danger">{{ form.start_datetime.errors }}</div>
+            {% endif %}
+            <div data-role="start-validation" class="mt-1"></div>
+        </div>
+        <div class="col-12 col-md-6">
+            {{ form.cabinet.label_tag }}
+            {{ form.cabinet }}
+            <div class="form-text text-muted" data-role="cabinet-help" data-default-text="{% trans "Будет выбран автоматически, если доступен" %}">{% trans "Будет выбран автоматически, если доступен" %}</div>
+            {% if form.cabinet.errors %}
+                <div class="text-danger">{{ form.cabinet.errors }}</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="row g-3 mb-3">
+        <div class="col-12 col-md-6">
+            {{ form.status.label_tag }}
+            {{ form.status }}
+            {% if form.status.errors %}
+                <div class="text-danger">{{ form.status.errors }}</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div data-role="validation-message" class="alert d-none mb-3"></div>
+
+    {% if form.non_field_errors %}
+        <div class="alert alert-danger">
+            {{ form.non_field_errors }}
+        </div>
+    {% endif %}
+
+    <div class="d-grid gap-2 d-md-flex justify-content-md-end mt-3 mt-md-4">
+        {% if show_back_button %}
+        <a href="{{ back_url|default:calendar_url }}" class="btn btn-secondary">
+            <i class="bi bi-arrow-left"></i> <span class="d-none d-sm-inline">{% trans "Назад к календарю" %}</span><span class="d-sm-none">{% trans "Назад" %}</span>
+        </a>
+        {% endif %}
+        <button type="submit" class="btn btn-primary">
+            <i class="bi bi-check-circle"></i> <span class="d-none d-sm-inline">{% trans "Сохранить изменения" %}</span><span class="d-sm-none">{% trans "Сохранить" %}</span>
+        </button>
+    </div>
+</form>

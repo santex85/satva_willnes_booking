@@ -1,0 +1,275 @@
+<script>
+(function(global) {
+    function initBookingEditForm(container, options) {
+        if (!container) {
+            return;
+        }
+
+        const form = container.querySelector('form.booking-edit-form');
+        if (!form || form.dataset.initialized === 'true') {
+            return;
+        }
+
+        form.dataset.initialized = 'true';
+
+        const bookingId = form.dataset.bookingId;
+        const validateUrl = form.dataset.validateUrl;
+        const availableCabinetsUrl = form.dataset.availableCabinetsUrl;
+        const specialistsUrl = form.dataset.specialistsUrl;
+        const csrfInput = form.querySelector('[name=csrfmiddlewaretoken]');
+        const csrfToken = csrfInput ? csrfInput.value : '';
+        const validationMessage = form.querySelector('[data-role="validation-message"]');
+        const startDatetimeValidation = form.querySelector('[data-role="start-validation"]');
+        const cabinetHelpText = form.querySelector('[data-role="cabinet-help"]');
+        const cabinetHelpDefault = cabinetHelpText ? (cabinetHelpText.dataset.defaultText || cabinetHelpText.textContent) : '';
+
+        const serviceVariantSelect = form.querySelector('#id_service_variant');
+        const specialistSelect = form.querySelector('#id_specialist');
+        const startDatetimeInput = form.querySelector('#id_start_datetime');
+        const cabinetSelect = form.querySelector('#id_cabinet');
+
+        if (!serviceVariantSelect || !specialistSelect || !startDatetimeInput || !cabinetSelect) {
+            return;
+        }
+
+        let validationTimeout = null;
+
+        function setCabinetHelp(message, type) {
+            if (!cabinetHelpText) return;
+            cabinetHelpText.textContent = message;
+            cabinetHelpText.classList.remove('text-muted', 'text-primary', 'text-danger');
+            if (type === 'loading') {
+                cabinetHelpText.classList.add('text-primary');
+            } else if (type === 'error') {
+                cabinetHelpText.classList.add('text-danger');
+            } else {
+                cabinetHelpText.classList.add('text-muted');
+            }
+        }
+
+        function loadAvailableCabinets() {
+            const serviceVariantId = serviceVariantSelect.value;
+            const specialistId = specialistSelect.value;
+            const startDatetime = startDatetimeInput.value;
+
+            if (!serviceVariantId || !specialistId || !startDatetime) {
+                cabinetSelect.innerHTML = '<option value="">Сначала выберите услугу, специалиста и время</option>';
+                setCabinetHelp(cabinetHelpDefault, 'muted');
+                return;
+            }
+
+            const currentCabinet = cabinetSelect.value;
+            const selectedOption = cabinetSelect.options[cabinetSelect.selectedIndex];
+            const previousLabel = selectedOption ? selectedOption.textContent.trim() : '';
+
+            cabinetSelect.innerHTML = '';
+            const loadingOption = document.createElement('option');
+            loadingOption.value = currentCabinet || '';
+            loadingOption.selected = true;
+            loadingOption.textContent = previousLabel ? `${previousLabel} (обновляем...)` : 'Загрузка доступных кабинетов...';
+            cabinetSelect.appendChild(loadingOption);
+            cabinetSelect.disabled = true;
+            setCabinetHelp('Обновляем список кабинетов...', 'loading');
+
+            const params = new URLSearchParams({
+                service_variant_id: serviceVariantId,
+                specialist_id: specialistId,
+                datetime: startDatetime
+            });
+
+            if (bookingId) {
+                params.append('exclude_booking_id', bookingId);
+            }
+
+            fetch(`${availableCabinetsUrl}?${params.toString()}`)
+                .then(response => response.json())
+                .then(data => {
+                    cabinetSelect.disabled = false;
+                    if (data.error) {
+                        cabinetSelect.innerHTML = `<option value="">${data.error}</option>`;
+                        setCabinetHelp(data.error, 'error');
+                        return;
+                    }
+
+                    cabinetSelect.innerHTML = '<option value="">-- Выберите кабинет --</option>';
+                    if (Array.isArray(data.cabinets) && data.cabinets.length) {
+                        let cabinetFound = false;
+                        data.cabinets.forEach(cabinet => {
+                            const option = document.createElement('option');
+                            option.value = cabinet.id;
+                            option.textContent = cabinet.name;
+                            if (String(cabinet.id) === String(currentCabinet)) {
+                                option.selected = true;
+                                cabinetFound = true;
+                            }
+                            cabinetSelect.appendChild(option);
+                        });
+                        if (!cabinetFound && currentCabinet) {
+                            console.warn('Current cabinet not found in available cabinets');
+                        }
+                        setCabinetHelp(cabinetHelpDefault, 'muted');
+                    } else if (currentCabinet) {
+                        cabinetSelect.innerHTML = `<option value="${currentCabinet}" selected>Текущий кабинет (может быть недоступен)</option>`;
+                        setCabinetHelp('Текущий кабинет может быть недоступен для выбранного времени', 'error');
+                    } else {
+                        cabinetSelect.innerHTML = '<option value="">Нет доступных кабинетов</option>';
+                        setCabinetHelp('Свободные кабинеты не найдены для выбранного времени', 'error');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading cabinets:', error);
+                    cabinetSelect.disabled = false;
+                    cabinetSelect.innerHTML = '<option value="">Ошибка загрузки</option>';
+                    setCabinetHelp('Не удалось загрузить кабинеты. Попробуйте позже.', 'error');
+                });
+        }
+
+        function validateBookingEdit() {
+            if (!validateUrl) {
+                return;
+            }
+
+            const serviceVariantId = serviceVariantSelect.value;
+            const specialistId = specialistSelect.value;
+            const startDatetime = startDatetimeInput.value;
+            const cabinetId = cabinetSelect.value;
+
+            if (!serviceVariantId || !specialistId || !startDatetime || !cabinetId) {
+                if (validationMessage) {
+                    validationMessage.classList.add('d-none');
+                }
+                if (startDatetimeValidation) {
+                    startDatetimeValidation.innerHTML = '';
+                }
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('start_datetime', startDatetime);
+            formData.append('service_variant', serviceVariantId);
+            formData.append('specialist', specialistId);
+            formData.append('cabinet', cabinetId);
+            if (csrfToken) {
+                formData.append('csrfmiddlewaretoken', csrfToken);
+            }
+
+            fetch(validateUrl, {
+                method: 'POST',
+                body: formData
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (!validationMessage || !startDatetimeValidation) {
+                        return;
+                    }
+                    if (data.valid) {
+                        validationMessage.classList.remove('alert-danger');
+                        validationMessage.classList.add('alert-success', 'd-none');
+                        validationMessage.textContent = '';
+                        startDatetimeValidation.innerHTML = '<small class="text-success"><i class="bi bi-check-circle"></i> Время доступно</small>';
+                    } else {
+                        validationMessage.classList.remove('alert-success', 'd-none');
+                        validationMessage.classList.add('alert-danger');
+                        validationMessage.innerHTML = `<i class="bi bi-exclamation-triangle"></i> ${data.error || 'Ошибка валидации'}`;
+                        startDatetimeValidation.innerHTML = `<small class="text-danger"><i class="bi bi-x-circle"></i> ${data.error || 'Ошибка'}</small>`;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error validating booking:', error);
+                    if (!validationMessage) return;
+                    validationMessage.classList.remove('alert-success', 'd-none');
+                    validationMessage.classList.add('alert-danger');
+                    validationMessage.innerHTML = '<i class="bi bi-exclamation-triangle"></i> Ошибка при проверке данных';
+                });
+        }
+
+        function loadSpecialistsForService() {
+            const serviceVariantId = serviceVariantSelect.value;
+            const currentSpecialist = specialistSelect.value;
+
+            if (!serviceVariantId) {
+                specialistSelect.innerHTML = '<option value="">Сначала выберите услугу</option>';
+                return;
+            }
+
+            specialistSelect.innerHTML = '<option value="">Загрузка...</option>';
+            specialistSelect.disabled = true;
+
+            const specialistUrl = `${specialistsUrl}?service_variant_id=${serviceVariantId}`;
+
+            fetch(specialistUrl)
+                .then(response => response.json())
+                .then(data => {
+                    specialistSelect.disabled = false;
+                    specialistSelect.innerHTML = '<option value="">Выберите специалиста</option>';
+                    data.forEach(specialist => {
+                        const option = document.createElement('option');
+                        option.value = specialist.id;
+                        option.textContent = specialist.full_name;
+                        if (String(specialist.id) === String(currentSpecialist)) {
+                            option.selected = true;
+                        }
+                        specialistSelect.appendChild(option);
+                    });
+
+                    if (!startDatetimeInput.value || String(specialistSelect.value) !== String(currentSpecialist)) {
+                        cabinetSelect.innerHTML = '<option value="">Сначала выберите специалиста и время</option>';
+                    } else {
+                        loadAvailableCabinets();
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading specialists:', error);
+                    specialistSelect.disabled = false;
+                    specialistSelect.innerHTML = '<option value="">Ошибка загрузки</option>';
+                });
+        }
+
+        function scheduleValidation() {
+            if (validationTimeout) {
+                clearTimeout(validationTimeout);
+            }
+            validationTimeout = setTimeout(validateBookingEdit, 500);
+        }
+
+        serviceVariantSelect.addEventListener('change', function() {
+            loadSpecialistsForService();
+            loadAvailableCabinets();
+            scheduleValidation();
+        });
+
+        specialistSelect.addEventListener('change', function() {
+            loadAvailableCabinets();
+            scheduleValidation();
+        });
+
+        startDatetimeInput.addEventListener('change', function() {
+            loadAvailableCabinets();
+            scheduleValidation();
+        });
+
+        cabinetSelect.addEventListener('change', scheduleValidation);
+
+        if (serviceVariantSelect.value) {
+            const initialCabinetValue = cabinetSelect.value;
+            loadSpecialistsForService();
+            if (serviceVariantSelect.value && specialistSelect.value && startDatetimeInput.value) {
+                setTimeout(function() {
+                    loadAvailableCabinets();
+                    if (initialCabinetValue) {
+                        setTimeout(function() {
+                            cabinetSelect.value = initialCabinetValue;
+                        }, 100);
+                    }
+                }, 500);
+            }
+        }
+
+        if (options && typeof options.onInit === 'function') {
+            options.onInit(form);
+        }
+    }
+
+    global.initBookingEditForm = initBookingEditForm;
+})(window);
+</script>

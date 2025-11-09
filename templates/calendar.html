@@ -256,8 +256,6 @@
     </div>
 </div>
 
-<!-- Модальное окно выбора произвольного диапазона -->
-
 <!-- Модальное окно для результатов -->
 <div class="modal fade" id="resultModal" tabindex="-1">
     <div class="modal-dialog">
@@ -273,6 +271,32 @@
         </div>
     </div>
 </div>
+
+<!-- Модальное окно редактирования бронирования -->
+<div class="modal fade" id="bookingEditModal" tabindex="-1" aria-labelledby="bookingEditModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="bookingEditModalLabel"><i class="bi bi-pencil-square"></i> Редактировать бронирование</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="bookingEditModalBody">
+                <div class="text-center py-5" id="bookingEditModalLoading">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Загрузка...</span>
+                    </div>
+                    <p class="mt-3 text-muted">Загружаем данные бронирования…</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% include 'booking/partials/booking_edit_form_script.html' %}
+
 {% endblock %}
 
 {% block extra_js %}
@@ -289,6 +313,9 @@
     let currentWidthMode = 'standard'; // standard | wide | fullscreen
     let currentDate = null;
     let quickBookingModal = null;
+    let bookingEditModal;
+    const bookingEditModalEl = document.getElementById('bookingEditModal');
+    const bookingEditModalBody = document.getElementById('bookingEditModalBody');
 
     // Получаем CSRF token
     function getCookie(name) {
@@ -347,9 +374,9 @@
             slotMaxTime: '22:00:00',
             slotDuration: '00:30:00',
             eventClick: function(info) {
-                // Открываем детальную страницу бронирования
+                info.jsEvent.preventDefault();
                 saveViewState();
-                window.location.href = '/booking/' + info.event.id + '/';
+                openBookingEditModal(info.event.id);
             },
             dateClick: function(info) {
                 // Обработка клика на свободный слот
@@ -509,6 +536,132 @@
         } catch (e) {
             console.warn('Unable to read width mode preference', e);
         }
+    }
+
+    function openBookingEditModal(bookingId) {
+        if (!bookingEditModalEl || !bookingEditModalBody) {
+            window.location.href = `/booking/${bookingId}/`;
+            return;
+        }
+
+        if (!bookingEditModal) {
+            bookingEditModal = new bootstrap.Modal(bookingEditModalEl);
+        }
+
+        bookingEditModalBody.innerHTML = `
+            <div class="text-center py-5">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Загрузка...</span>
+                </div>
+                <p class="mt-3 text-muted">Загружаем данные бронирования…</p>
+            </div>
+        `;
+
+        bookingEditModal.show();
+
+        fetch(`/booking/${bookingId}/?modal=1`, {
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (!data || !data.success) {
+                    throw new Error(data && data.error ? data.error : 'Ошибка загрузки бронирования');
+                }
+                bookingEditModalBody.innerHTML = data.html;
+                initBookingEditForm(bookingEditModalBody, {
+                    onInit(form) {
+                        form.dataset.ajax = 'true';
+                        form.addEventListener('submit', handleBookingModalSubmit);
+                    }
+                });
+            })
+            .catch(error => {
+                console.error('Error loading booking form:', error);
+                bookingEditModalBody.innerHTML = `
+                    <div class="alert alert-danger mb-0">
+                        <i class="bi bi-exclamation-triangle"></i> Не удалось загрузить форму. <a href="/booking/${bookingId}/" class="alert-link">Открыть на отдельной странице</a>.
+                    </div>
+                `;
+            });
+    }
+
+    function handleBookingModalSubmit(event) {
+        event.preventDefault();
+        const form = event.target;
+        if (!form) return;
+
+        if (form.dataset.submitting === 'true') {
+            return;
+        }
+        form.dataset.submitting = 'true';
+
+        const submitButton = form.querySelector('button[type="submit"]');
+        let originalButtonHTML = '';
+        if (submitButton) {
+            originalButtonHTML = submitButton.innerHTML;
+            submitButton.disabled = true;
+            submitButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Сохранение...';
+        }
+
+        const formData = new FormData(form);
+        const actionUrl = form.getAttribute('action') || `/booking/${form.dataset.bookingId}/`;
+
+        fetch(actionUrl, {
+            method: 'POST',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: formData
+        })
+            .then(response => {
+                if (!response.ok) {
+                    return response.json().then(data => {
+                        throw data;
+                    }).catch(() => {
+                        throw new Error('Ошибка при сохранении бронирования');
+                    });
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    bookingEditModal.hide();
+                    calendar.refetchEvents();
+                    showResultModal('Успех', data.message || 'Бронирование успешно обновлено', true);
+                } else {
+                    if (data.html) {
+                        bookingEditModalBody.innerHTML = data.html;
+                        initBookingEditForm(bookingEditModalBody, {
+                            onInit(newForm) {
+                                newForm.dataset.ajax = 'true';
+                                newForm.addEventListener('submit', handleBookingModalSubmit);
+                            }
+                        });
+                    }
+                    if (data.error) {
+                        showResultModal('Ошибка', data.error, false);
+                    }
+                }
+            })
+            .catch(error => {
+                console.error('Error submitting booking form:', error);
+                const message = error && error.error ? error.error : (error && error.message ? error.message : 'Не удалось сохранить изменения. Попробуйте позже.');
+                showResultModal('Ошибка', message, false);
+            })
+            .finally(() => {
+                if (submitButton && submitButton.isConnected) {
+                    submitButton.disabled = false;
+                    submitButton.innerHTML = originalButtonHTML;
+                }
+                form.dataset.submitting = 'false';
+            });
     }
 
     function openQuickBookingModal(date, dateStr) {

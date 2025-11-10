@@ -42,6 +42,17 @@
     .fc-timegrid-slot:hover {
         cursor: pointer;
     }
+    .fc .fc-timegrid-now-indicator-line,
+    .fc .fc-daygrid-now-indicator-line {
+        border-top: 2px solid #ff4d4f;
+    }
+    .fc .fc-timegrid-now-indicator-arrow {
+        border-color: transparent transparent #ff4d4f transparent;
+    }
+    .fc .fc-daygrid-now-indicator-dot {
+        background: #ff4d4f;
+        border-color: #ff4d4f;
+    }
     .legend {
         display: flex;
         gap: 1rem;
@@ -354,6 +365,7 @@
             initialDate: currentDate || undefined,
             locale: 'ru',
             headerToolbar: false,
+            nowIndicator: true,
             views: {
                 timeGridThreeDay: {
                     type: 'timeGrid',

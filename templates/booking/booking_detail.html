@@ -43,7 +43,7 @@
 
                 <!-- Редактирование -->
                 <h5 class="h6 mb-3"><i class="bi bi-pencil-square"></i> Редактировать бронирование</h5>
-                {% include 'booking/partials/booking_edit_form.html' with form=form booking=booking form_action=request.path show_back_button=True back_url=back_url calendar_url=calendar_url validate_url=validate_url available_cabinets_url=available_cabinets_url specialists_url=specialists_url %}
+                {% include 'booking/partials/booking_edit_form.html' with form=form booking=booking form_action=request.path show_back_button=True back_url=back_url calendar_url=calendar_url validate_url=validate_url available_cabinets_url=available_cabinets_url specialists_url=specialists_url delete_url=delete_url %}
 
                 <hr class="my-4">
 

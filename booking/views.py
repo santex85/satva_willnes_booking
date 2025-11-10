@@ -556,8 +556,10 @@ def booking_detail_view(request, pk):
         'validate_url': reverse('validate_booking_edit', args=[booking.pk]),
         'available_cabinets_url': reverse('available_cabinets'),
         'specialists_url': reverse('specialists_for_service'),
+        'delete_url': reverse('booking_delete', args=[booking.pk]),
         'show_back_button': not ajax_request,
         'submit_via_ajax': ajax_request,
+        'show_delete_button': ajax_request,
     }
 
     if request.method == 'POST':
@@ -586,6 +588,7 @@ def booking_detail_view(request, pk):
         html = render_to_string('booking/partials/booking_edit_form.html', context, request=request)
         return JsonResponse({'success': True, 'html': html})
 
+    context['show_delete_button'] = False
     return render(request, 'booking/booking_detail.html', context)
 
 

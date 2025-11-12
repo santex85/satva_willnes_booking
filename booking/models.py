@@ -2,6 +2,8 @@ from django.db import models
 from django.contrib.auth.models import User
 from solo.models import SingletonModel
 from datetime import timedelta
+from django.utils import timezone
+import calendar
 
 
 class SystemSettings(SingletonModel):
@@ -246,6 +248,149 @@ class ScheduleTemplateDay(models.Model):
         return f"{self.template.name} - {day_name} ({self.start_time}-{self.end_time})"
 
 
+class BookingSeries(models.Model):
+    """Правило для повторяющихся бронирований"""
+
+    FREQUENCY_DAILY = 'daily'
+    FREQUENCY_WEEKLY = 'weekly'
+    FREQUENCY_MONTHLY = 'monthly'
+    FREQUENCY_YEARLY = 'yearly'
+
+    FREQUENCY_CHOICES = [
+        (FREQUENCY_DAILY, 'Каждый день'),
+        (FREQUENCY_WEEKLY, 'Каждую неделю'),
+        (FREQUENCY_MONTHLY, 'Каждый месяц'),
+        (FREQUENCY_YEARLY, 'Каждый год'),
+    ]
+
+    start_time = models.DateTimeField(verbose_name='Начало серии')
+    frequency = models.CharField(max_length=20, choices=FREQUENCY_CHOICES, verbose_name='Частота')
+    interval = models.PositiveIntegerField(default=1, verbose_name='Интервал повторов')
+    end_date = models.DateField(null=True, blank=True, verbose_name='Дата окончания')
+    occurrence_count = models.PositiveIntegerField(null=True, blank=True, verbose_name='Количество повторений')
+    weekdays = models.JSONField(default=list, blank=True, verbose_name='Дни недели (для еженедельных повторов)')
+    excluded_dates = models.JSONField(default=list, blank=True, verbose_name='Исключенные даты')
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='booking_series',
+        verbose_name='Создано пользователем'
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='Создано')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='Обновлено')
+
+    class Meta:
+        verbose_name = 'Серия бронирований'
+        verbose_name_plural = 'Серии бронирований'
+
+    def __str__(self):
+        return f"Серия #{self.id} ({self.get_frequency_display()})"
+
+    def add_exception(self, date_obj):
+        iso_date = date_obj.isoformat()
+        if iso_date not in self.excluded_dates:
+            self.excluded_dates.append(iso_date)
+            self.save(update_fields=['excluded_dates'])
+
+    def remove_exception(self, date_obj):
+        iso_date = date_obj.isoformat()
+        if iso_date in self.excluded_dates:
+            self.excluded_dates.remove(iso_date)
+            self.save(update_fields=['excluded_dates'])
+
+    def _add_months(self, dt, months):
+        month = dt.month - 1 + months
+        year = dt.year + month // 12
+        month = month % 12 + 1
+        day = min(dt.day, calendar.monthrange(year, month)[1])
+        return dt.replace(year=year, month=month, day=day)
+
+    def _add_years(self, dt, years):
+        try:
+            return dt.replace(year=dt.year + years)
+        except ValueError:
+            # 29 февраля в невисокосный год -> 28 февраля
+            return dt.replace(month=2, day=28, year=dt.year + years)
+
+    def generate_datetimes(self, *, from_datetime=None):
+        """
+        Генерирует список дат начала для серии.
+        Возвращает список aware datetime. Использует настройки окончания.
+        """
+        if not from_datetime:
+            current = timezone.localtime(self.start_time) if timezone.is_aware(self.start_time) else self.start_time
+        else:
+            current = from_datetime
+
+        tz = timezone.get_current_timezone()
+        if timezone.is_naive(current):
+            current = timezone.make_aware(current, tz)
+
+        occurrences = []
+        excluded = set(self.excluded_dates or [])
+        remaining = self.occurrence_count
+        frequency = self.frequency
+        interval = max(1, self.interval or 1)
+        weekdays = sorted(set(self.weekdays or []))
+
+        def add_occurrence(dt):
+            local_dt = timezone.localtime(dt)
+            if local_dt.date().isoformat() in excluded:
+                return False
+            occurrences.append(dt)
+            return True
+
+        if frequency == self.FREQUENCY_WEEKLY and not weekdays:
+            weekdays = [current.weekday()]
+
+        while True:
+            if remaining is not None and remaining <= 0:
+                break
+
+            if self.end_date and timezone.localtime(current).date() > self.end_date:
+                break
+
+            # Для еженедельных повторов с несколькими днями
+            if frequency == self.FREQUENCY_WEEKLY and len(weekdays) > 1:
+                week_start = current - timedelta(days=current.weekday())
+                for weekday in weekdays:
+                    candidate = week_start + timedelta(days=weekday)
+                    candidate = candidate.replace(hour=current.hour, minute=current.minute, second=current.second, microsecond=current.microsecond)
+                    if candidate < current:
+                        continue
+                    candidate = candidate.astimezone(tz) if timezone.is_aware(self.start_time) else timezone.make_aware(candidate, tz)
+                    if self.end_date and timezone.localtime(candidate).date() > self.end_date:
+                        continue
+                    if add_occurrence(candidate):
+                        if remaining is not None:
+                            remaining -= 1
+                            if remaining <= 0:
+                                break
+                current = current + timedelta(weeks=interval)
+                continue
+
+            if add_occurrence(current):
+                if remaining is not None:
+                    remaining -= 1
+
+            if remaining is not None and remaining <= 0:
+                break
+
+            if frequency == self.FREQUENCY_DAILY:
+                current = current + timedelta(days=interval)
+            elif frequency == self.FREQUENCY_WEEKLY:
+                current = current + timedelta(weeks=interval)
+            elif frequency == self.FREQUENCY_MONTHLY:
+                current = self._add_months(current, interval)
+            elif frequency == self.FREQUENCY_YEARLY:
+                current = self._add_years(current, interval)
+            else:
+                break
+
+        return occurrences
+
+
 class Booking(models.Model):
     """Бронирование"""
     STATUS_CHOICES = [
@@ -289,6 +434,15 @@ class Booking(models.Model):
         related_name='created_bookings',
         verbose_name='Создано пользователем'
     )
+    series = models.ForeignKey(
+        BookingSeries,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='bookings',
+        verbose_name='Серия'
+    )
+    sequence = models.PositiveIntegerField(default=1, verbose_name='Порядок в серии')
     status = models.CharField(
         max_length=20,
         choices=STATUS_CHOICES,

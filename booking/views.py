@@ -6,6 +6,7 @@ from django.views.generic import DeleteView
 from django.urls import reverse, reverse_lazy
 from django.utils.decorators import method_decorator
 from django.forms import modelformset_factory
+from django.db import transaction
 from django.db.models import Count, Sum
 from django.utils import timezone
 from django.contrib import messages
@@ -14,7 +15,7 @@ import datetime
 import logging
 
 from django.contrib.auth.models import User, Group
-from .models import Booking, SpecialistProfile, Cabinet, ServiceVariant, SpecialistSchedule, ScheduleTemplate
+from .models import Booking, SpecialistProfile, Cabinet, ServiceVariant, SpecialistSchedule, ScheduleTemplate, BookingSeries
 from .decorators import admin_required, specialist_required
 from .utils import find_available_slots, check_booking_conflicts
 from .forms import (
@@ -29,6 +30,193 @@ from .forms import (
 from collections import defaultdict
 
 logger = logging.getLogger(__name__)
+
+
+class RecurrenceError(Exception):
+    """Исключение для ошибок работы с сериями бронирований."""
+
+
+def build_series_from_payload(start_time, recurrence_payload, *, created_by=None, series=None):
+    """
+    Создает (или обновляет) экземпляр BookingSeries из данных формы.
+    """
+    target_series = series or BookingSeries()
+    target_series.start_time = start_time
+    target_series.frequency = recurrence_payload['frequency']
+    target_series.interval = recurrence_payload['interval']
+    if recurrence_payload['end_type'] == 'count':
+        target_series.occurrence_count = recurrence_payload['occurrences']
+        target_series.end_date = None
+    else:
+        target_series.end_date = recurrence_payload['end_date']
+        target_series.occurrence_count = None
+    target_series.weekdays = recurrence_payload.get('weekdays', [])
+    target_series.excluded_dates = recurrence_payload.get('excluded_dates', [])
+    if created_by is not None:
+        target_series.created_by = created_by
+    return target_series
+
+
+def detect_occurrence_conflicts(occurrences, service_variant, specialist, cabinet, exclude_ids=None):
+    """
+    Проверяет конфликты для списка дат.
+    """
+    issues = []
+    for index, start_dt in enumerate(occurrences, start=1):
+        exclude_id = None
+        if exclude_ids and index - 1 < len(exclude_ids):
+            exclude_id = exclude_ids[index - 1]
+        conflicts = check_booking_conflicts(
+            start_time=start_dt,
+            service_variant=service_variant,
+            specialist=specialist,
+            cabinet=cabinet,
+            exclude_booking_id=exclude_id
+        )
+        if conflicts:
+            issues.append((index, start_dt, conflicts))
+    return issues
+
+
+def format_conflict_message(conflicts):
+    parts = []
+    if conflicts.get('specialist_busy'):
+        parts.append('специалист занят')
+    if conflicts.get('cabinet_busy'):
+        parts.append('кабинет занят')
+    if conflicts.get('specialist_not_available'):
+        parts.append('специалист не работает')
+    if conflicts.get('cabinet_not_available'):
+        parts.append('кабинет недоступен')
+    return ', '.join(parts)
+
+
+def handle_single_booking_update(booking, updated_booking, recurrence_enabled, user):
+    with transaction.atomic():
+        updated_booking.created_by = updated_booking.created_by or user
+        if booking.series and not recurrence_enabled:
+            series = booking.series
+            updated_booking.series = None
+            updated_booking.sequence = 1
+            updated_booking.save()
+            # Обновляем последовательность оставшихся бронирований серии
+            remaining = list(series.bookings.order_by('start_time'))
+            if not remaining:
+                series.delete()
+            else:
+                for index, item in enumerate(remaining, start=1):
+                    if item.sequence != index:
+                        item.sequence = index
+                        item.save(update_fields=['sequence'])
+            return 'Бронирование обновлено (повтор отключён)'
+        else:
+            if booking.series:
+                updated_booking.series = booking.series
+                updated_booking.sequence = booking.sequence
+            else:
+                updated_booking.series = None
+                updated_booking.sequence = 1
+            updated_booking.save()
+    return 'Бронирование обновлено'
+
+
+def handle_series_booking_update(booking, updated_booking, recurrence_payload, user):
+    existing_series = booking.series
+
+    if recurrence_payload is None:
+        if not existing_series:
+            updated_booking.series = None
+            updated_booking.sequence = 1
+            updated_booking.created_by = updated_booking.created_by or user
+            updated_booking.save()
+            return 'Бронирование обновлено'
+
+        with transaction.atomic():
+            # Удаляем будущие бронирования серии
+            future_qs = existing_series.bookings.filter(start_time__gte=booking.start_time).exclude(pk=booking.pk)
+            removed_count = future_qs.count()
+            future_qs.delete()
+            # Отвязываем прошлые бронирования
+            existing_series.bookings.filter(start_time__lt=booking.start_time).update(series=None, sequence=1)
+            existing_series.delete()
+            updated_booking.series = None
+            updated_booking.sequence = 1
+            updated_booking.created_by = updated_booking.created_by or user
+            updated_booking.save()
+        return 'Повтор отключён, серия удалена'
+
+    # Создаем/обновляем серию
+    series = build_series_from_payload(
+        start_time=updated_booking.start_time,
+        recurrence_payload=recurrence_payload,
+        created_by=(existing_series.created_by if existing_series else user),
+        series=existing_series
+    )
+
+    if existing_series:
+        replace_qs = existing_series.bookings.filter(start_time__gte=booking.start_time).order_by('start_time')
+        exclude_ids = [item.id for item in replace_qs]
+    else:
+        replace_qs = []
+        exclude_ids = None
+
+    occurrences = series.generate_datetimes()
+    if not occurrences:
+        raise RecurrenceError('Не удалось построить повторяющиеся даты')
+
+    conflicts = detect_occurrence_conflicts(
+        occurrences,
+        service_variant=updated_booking.service_variant,
+        specialist=updated_booking.specialist,
+        cabinet=updated_booking.cabinet,
+        exclude_ids=exclude_ids
+    )
+    if conflicts:
+        messages_list = []
+        for index, start_dt, conflict_data in conflicts[:3]:
+            local_dt = timezone.localtime(start_dt)
+            conflict_text = format_conflict_message(conflict_data)
+            messages_list.append(
+                f"{local_dt.strftime('%d.%m.%Y %H:%M')} ({conflict_text})"
+            )
+        if len(conflicts) > 3:
+            messages_list.append('и другие конфликты…')
+        raise RecurrenceError('Конфликты при обновлении серии: ' + '; '.join(messages_list))
+
+    with transaction.atomic():
+        series.created_by = series.created_by or user
+        series.save()
+
+        # Отвязываем прошлые бронирования, которые не должны входить в обновленную серию
+        if existing_series:
+            existing_series.bookings.filter(start_time__lt=booking.start_time).update(series=None, sequence=1)
+            existing_series.bookings.filter(start_time__gte=booking.start_time).exclude(pk=booking.pk).delete()
+
+        # Обновляем текущее бронирование как первый элемент серии
+        updated_booking.series = series
+        updated_booking.sequence = 1
+        updated_booking.start_time = occurrences[0]
+        updated_booking.created_by = updated_booking.created_by or user
+        updated_booking.save()
+
+        # Создаем остальные бронирования серии
+        for sequence, start_dt in enumerate(occurrences[1:], start=2):
+            Booking.objects.create(
+                guest_name=updated_booking.guest_name,
+                guest_room_number=updated_booking.guest_room_number,
+                service_variant=updated_booking.service_variant,
+                specialist=updated_booking.specialist,
+                cabinet=updated_booking.cabinet,
+                start_time=start_dt,
+                created_by=user,
+                status=updated_booking.status,
+                series=series,
+                sequence=sequence
+            )
+
+    if existing_series:
+        return f'Обновлено бронирование и серия ({len(occurrences)} записей)'
+    return f'Создана серия бронирований ({len(occurrences)} записей)'
 
 
 @login_required
@@ -561,25 +749,64 @@ def booking_detail_view(request, pk):
         'submit_via_ajax': ajax_request,
         'show_delete_button': ajax_request,
     }
+    if booking.series:
+        context['series'] = booking.series
+        context['series_count'] = booking.series.bookings.count()
+    else:
+        context['series'] = None
+        context['series_count'] = 0
 
     if request.method == 'POST':
         if form.is_valid():
+            updated_booking = form.save(commit=False)
+            recurrence_payload = form.cleaned_data.get('recurrence_payload')
+            recurrence_enabled = form.cleaned_data.get('recurrence_enabled')
+            apply_scope = form.cleaned_data.get('apply_scope') or 'single'
+
+            if not booking.series and recurrence_payload:
+                apply_scope = 'series'
+
             try:
-                form.save()
-                logger.info(f"Booking {booking.id} updated by {request.user.username}")
+                if apply_scope == 'series':
+                    message_text = handle_series_booking_update(
+                        booking=booking,
+                        updated_booking=updated_booking,
+                        recurrence_payload=recurrence_payload,
+                        user=request.user
+                    )
+                else:
+                    message_text = handle_single_booking_update(
+                        booking=booking,
+                        updated_booking=updated_booking,
+                        recurrence_enabled=recurrence_enabled,
+                        user=request.user
+                    )
+
+                logger.info(f"Booking {booking.id} updated by {request.user.username} scope={apply_scope}")
                 if ajax_request:
-                    return JsonResponse({'success': True, 'message': 'Бронирование успешно обновлено'})
-                messages.success(request, 'Бронирование успешно обновлено')
+                    return JsonResponse({'success': True, 'message': message_text})
+                messages.success(request, message_text)
                 return redirect('calendar')
+
+            except RecurrenceError as recur_error:
+                error_message = str(recur_error)
+                logger.warning(f"Recurrence error for booking {booking.id}: {error_message}")
+                if ajax_request:
+                    context['form'] = form
+                    html = render_to_string('booking/partials/booking_edit_form.html', context, request=request)
+                    return JsonResponse({'success': False, 'html': html, 'error': error_message}, status=400)
+                messages.error(request, error_message)
             except Exception as e:
                 logger.error(f"Error updating booking {booking.id}: {e}", exc_info=True)
                 if ajax_request:
+                    context['form'] = form
                     html = render_to_string('booking/partials/booking_edit_form.html', context, request=request)
                     return JsonResponse({'success': False, 'html': html, 'error': 'Ошибка при обновлении бронирования. Попробуйте еще раз.'}, status=500)
                 messages.error(request, 'Ошибка при обновлении бронирования. Попробуйте еще раз.')
         else:
             logger.warning(f"Form validation errors for booking {booking.id}: {form.errors}")
             if ajax_request:
+                context['form'] = form
                 html = render_to_string('booking/partials/booking_edit_form.html', context, request=request)
                 return JsonResponse({'success': False, 'html': html, 'errors': form.errors}, status=400)
             messages.error(request, 'Ошибка при обновлении бронирования. Проверьте введенные данные.')
@@ -801,24 +1028,83 @@ def quick_create_booking_view(request):
                         'error': 'Выбранный кабинет не подходит для данной услуги'
                     }, status=400)
                 
-                # Создаем бронирование
-                booking = Booking.objects.create(
-                    guest_name=guest_name,
-                    guest_room_number=guest_room_number,
-                    service_variant=service_variant,
-                    specialist=specialist,
-                    cabinet=cabinet,
-                    start_time=final_start_time,
-                    created_by=request.user,
-                    status='confirmed'
-                )
-                
-                logger.info(f"Quick booking created: {booking.id} by {request.user.username}")
-                return JsonResponse({
-                    'success': True,
-                    'message': 'Бронирование успешно создано',
-                    'booking_id': booking.id
-                })
+                recurrence_payload = form.cleaned_data.get('recurrence_payload')
+
+                with transaction.atomic():
+                    if recurrence_payload:
+                        series = build_series_from_payload(
+                            start_time=final_start_time,
+                            recurrence_payload=recurrence_payload,
+                            created_by=request.user
+                        )
+                        occurrences = series.generate_datetimes()
+                        if not occurrences:
+                            return JsonResponse({
+                                'error': 'Не удалось построить расписание повторов'
+                            }, status=400)
+
+                        conflicts = detect_occurrence_conflicts(
+                            occurrences,
+                            service_variant=service_variant,
+                            specialist=specialist,
+                            cabinet=cabinet
+                        )
+                        if conflicts:
+                            messages_list = []
+                            for index, start_dt, conflict_data in conflicts[:3]:
+                                local_dt = timezone.localtime(start_dt)
+                                conflict_text = format_conflict_message(conflict_data)
+                                messages_list.append(
+                                    f"{local_dt.strftime('%d.%m.%Y %H:%M')} ({conflict_text})"
+                                )
+                            if len(conflicts) > 3:
+                                messages_list.append('и другие конфликты…')
+                            return JsonResponse({
+                                'error': 'Невозможно создать серию бронирований. Конфликты: ' + '; '.join(messages_list)
+                            }, status=400)
+
+                        series.save()
+                        created_bookings = []
+                        for index, start_dt in enumerate(occurrences, start=1):
+                            booking = Booking.objects.create(
+                                guest_name=guest_name,
+                                guest_room_number=guest_room_number,
+                                service_variant=service_variant,
+                                specialist=specialist,
+                                cabinet=cabinet,
+                                start_time=start_dt,
+                                created_by=request.user,
+                                status='confirmed',
+                                series=series,
+                                sequence=index
+                            )
+                            created_bookings.append(booking)
+
+                        created_count = len(created_bookings)
+                        logger.info(f"Created booking series #{series.id} with {created_count} items by {request.user.username}")
+                        return JsonResponse({
+                            'success': True,
+                            'message': f'Создано {created_count} повторяющихся бронирований',
+                            'booking_id': created_bookings[0].id,
+                            'series_id': series.id
+                        })
+                    else:
+                        booking = Booking.objects.create(
+                            guest_name=guest_name,
+                            guest_room_number=guest_room_number,
+                            service_variant=service_variant,
+                            specialist=specialist,
+                            cabinet=cabinet,
+                            start_time=final_start_time,
+                            created_by=request.user,
+                            status='confirmed'
+                        )
+                        logger.info(f"Quick booking created: {booking.id} by {request.user.username}")
+                        return JsonResponse({
+                            'success': True,
+                            'message': 'Бронирование успешно создано',
+                            'booking_id': booking.id
+                        })
                 
             except Exception as e:
                 logger.error(f"Error creating quick booking: {e}", exc_info=True)
@@ -947,6 +1233,50 @@ class BookingDeleteView(DeleteView):
     model = Booking
     template_name = 'booking/booking_confirm_delete.html'
     success_url = reverse_lazy('calendar')
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        booking = self.object
+        series = booking.series
+        if series:
+            context['series'] = series
+            context['series_count'] = series.bookings.count()
+        else:
+            context['series'] = None
+            context['series_count'] = 0
+        return context
+
+    def delete(self, request, *args, **kwargs):
+        self.object = self.get_object()
+        scope = request.POST.get('scope', 'single')
+        booking = self.object
+        series = booking.series
+        success_url = self.get_success_url()
+
+        if scope == 'series' and series:
+            with transaction.atomic():
+                count = series.bookings.count()
+                series.bookings.all().delete()
+                series.delete()
+            messages.success(request, f'Удалена серия из {count} бронирований')
+            return redirect(success_url)
+
+        with transaction.atomic():
+            series_to_update = booking.series
+            booking.delete()
+            messages.success(request, 'Бронирование удалено')
+
+            if series_to_update:
+                remaining = series_to_update.bookings.order_by('start_time')
+                if not remaining.exists():
+                    series_to_update.delete()
+                else:
+                    for index, item in enumerate(remaining, start=1):
+                        if item.sequence != index:
+                            item.sequence = index
+                            item.save(update_fields=['sequence'])
+
+        return redirect(success_url)
 
 
 # Manage schedules view

@@ -27,6 +27,16 @@
         const specialistSelect = form.querySelector('#id_specialist');
         const startDatetimeInput = form.querySelector('#id_start_datetime');
         const cabinetSelect = form.querySelector('#id_cabinet');
+        const recurrenceToggle = form.querySelector('#id_recurrence_enabled');
+        const recurrenceSettings = form.querySelector('[data-role=\"recurrence-settings\"]');
+        const recurrenceFrequency = form.querySelector('#id_recurrence_frequency');
+        const recurrenceIntervalLabel = form.querySelector('[data-role=\"recurrence-interval-label\"]');
+        const recurrenceWeekdaysBlock = form.querySelector('[data-role=\"recurrence-weekdays\"]');
+        const recurrenceEndType = form.querySelector('#id_recurrence_end_type');
+        const recurrenceCountField = form.querySelector('[data-role=\"recurrence-count-field\"]');
+        const recurrenceUntilField = form.querySelector('[data-role=\"recurrence-until-field\"]');
+        const recurrenceExcludedDisplay = form.querySelector('[data-role=\"recurrence-excluded-display\"]');
+        const recurrenceExcludedHidden = form.querySelector('#id_recurrence_excluded_dates');
 
         if (!serviceVariantSelect || !specialistSelect || !startDatetimeInput || !cabinetSelect) {
             return;
@@ -250,6 +260,144 @@
 
         cabinetSelect.addEventListener('change', scheduleValidation);
 
+        function toggleRecurrenceSettingsState(forceEnabled) {
+            if (!recurrenceSettings) return;
+            const enabled = typeof forceEnabled === 'boolean'
+                ? forceEnabled
+                : (recurrenceToggle ? recurrenceToggle.checked : false);
+            recurrenceSettings.classList.toggle('d-none', !enabled);
+            if (recurrenceToggle) {
+                recurrenceToggle.checked = enabled;
+            }
+            if (!enabled && recurrenceExcludedHidden) {
+                recurrenceExcludedHidden.value = '';
+                if (recurrenceExcludedDisplay) {
+                    recurrenceExcludedDisplay.value = '';
+                }
+            }
+        }
+
+        function updateRecurrenceIntervalLabel() {
+            if (!recurrenceIntervalLabel || !recurrenceFrequency) return;
+            const freq = recurrenceFrequency.value;
+            let suffix = '';
+            switch (freq) {
+                case 'weekly':
+                    suffix = 'недель';
+                    break;
+                case 'monthly':
+                    suffix = 'месяцев';
+                    break;
+                case 'yearly':
+                    suffix = 'лет';
+                    break;
+                default:
+                    suffix = 'дней';
+            }
+            recurrenceIntervalLabel.textContent = suffix;
+        }
+
+        function updateRecurrenceFrequencyState() {
+            updateRecurrenceIntervalLabel();
+            if (!recurrenceWeekdaysBlock) return;
+            if (recurrenceFrequency && recurrenceFrequency.value === 'weekly') {
+                recurrenceWeekdaysBlock.classList.remove('d-none');
+            } else {
+                recurrenceWeekdaysBlock.classList.add('d-none');
+            }
+        }
+
+        function updateRecurrenceEndState() {
+            if (!recurrenceEndType) return;
+            const value = recurrenceEndType.value || 'count';
+            if (recurrenceCountField) {
+                recurrenceCountField.classList.toggle('d-none', value !== 'count');
+            }
+            if (recurrenceUntilField) {
+                recurrenceUntilField.classList.toggle('d-none', value !== 'until');
+            }
+        }
+
+        function hydrateExcludedDisplay() {
+            if (!recurrenceExcludedHidden || !recurrenceExcludedDisplay) return;
+            const raw = recurrenceExcludedHidden.value;
+            if (!raw) {
+                recurrenceExcludedDisplay.value = '';
+                return;
+            }
+            try {
+                const parsed = JSON.parse(raw);
+                if (Array.isArray(parsed)) {
+                    const formatted = parsed.map((iso) => {
+                        if (typeof iso !== 'string') return null;
+                        const parts = iso.split('-');
+                        if (parts.length !== 3) return null;
+                        return `${parts[2]}.${parts[1]}.${parts[0]}`;
+                    }).filter(Boolean);
+                    recurrenceExcludedDisplay.value = formatted.join(', ');
+                    return;
+                }
+            } catch (err) {
+                console.warn('Cannot parse recurrence excluded dates', err);
+            }
+            recurrenceExcludedDisplay.value = raw;
+        }
+
+        function syncExcludedDates() {
+            if (!recurrenceExcludedHidden || !recurrenceExcludedDisplay) return;
+            const raw = recurrenceExcludedDisplay.value.trim();
+            if (!raw) {
+                recurrenceExcludedHidden.value = '';
+                return;
+            }
+            const parts = raw.split(',').map((item) => item.trim()).filter(Boolean);
+            const isoDates = [];
+            parts.forEach((item) => {
+                if (!item) return;
+                let normalized = item.replace(/\//g, '.');
+                const isoMatch = normalized.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+                if (isoMatch) {
+                    isoDates.push(`${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`);
+                    return;
+                }
+                const match = normalized.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+                if (match) {
+                    const day = match[1].padStart(2, '0');
+                    const month = match[2].padStart(2, '0');
+                    const year = match[3];
+                    isoDates.push(`${year}-${month}-${day}`);
+                }
+            });
+            recurrenceExcludedHidden.value = isoDates.length ? JSON.stringify(isoDates) : '';
+        }
+
+        if (recurrenceToggle) {
+            recurrenceToggle.addEventListener('change', function() {
+                toggleRecurrenceSettingsState();
+            });
+        }
+
+        if (recurrenceFrequency) {
+            recurrenceFrequency.addEventListener('change', function() {
+                updateRecurrenceFrequencyState();
+            });
+        }
+
+        if (recurrenceEndType) {
+            recurrenceEndType.addEventListener('change', function() {
+                updateRecurrenceEndState();
+            });
+        }
+
+        if (recurrenceExcludedDisplay) {
+            recurrenceExcludedDisplay.addEventListener('blur', syncExcludedDates);
+        }
+
+        toggleRecurrenceSettingsState(recurrenceToggle ? recurrenceToggle.checked : false);
+        updateRecurrenceFrequencyState();
+        updateRecurrenceEndState();
+        hydrateExcludedDisplay();
+
         if (serviceVariantSelect.value) {
             const initialCabinetValue = cabinetSelect.value;
             loadSpecialistsForService();
@@ -264,6 +412,10 @@
                 }, 500);
             }
         }
+
+        form.addEventListener('submit', function() {
+            syncExcludedDates();
+        }, { capture: true });
 
         if (options && typeof options.onInit === 'function') {
             options.onInit(form);

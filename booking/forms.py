@@ -3,8 +3,134 @@
 """
 from django import forms
 from django.utils import timezone
-from .models import ServiceVariant, SpecialistProfile, Cabinet, SpecialistSchedule, Booking
+from django.utils.dateparse import parse_datetime
+from .models import ServiceVariant, SpecialistProfile, Cabinet, SpecialistSchedule, Booking, BookingSeries
 import datetime
+import json
+
+
+WEEKDAY_CHOICES = [
+    (0, 'Понедельник'),
+    (1, 'Вторник'),
+    (2, 'Среда'),
+    (3, 'Четверг'),
+    (4, 'Пятница'),
+    (5, 'Суббота'),
+    (6, 'Воскресенье'),
+]
+
+
+RECURRENCE_END_CHOICES = [
+    ('count', 'После количества повторов'),
+    ('until', 'До даты'),
+]
+
+
+def _parse_recurrence_excluded_dates(value):
+    if not value:
+        return []
+    if isinstance(value, list):
+        return value
+    value = value.strip()
+    if not value:
+        return []
+    try:
+        data = json.loads(value)
+        if isinstance(data, list):
+            return [str(item) for item in data if item]
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return [part.strip() for part in value.split(',') if part.strip()]
+
+
+def validate_recurrence(cleaned_data, start_datetime):
+    enabled = cleaned_data.get('recurrence_enabled')
+    if not enabled:
+        return None
+
+    frequency = cleaned_data.get('recurrence_frequency')
+    interval = cleaned_data.get('recurrence_interval') or 1
+    end_type = cleaned_data.get('recurrence_end_type')
+    end_date = cleaned_data.get('recurrence_end_date')
+    occurrences = cleaned_data.get('recurrence_occurrences')
+    weekdays = cleaned_data.get('recurrence_weekdays') or []
+    excluded_raw = cleaned_data.get('recurrence_excluded_dates')
+    excluded_dates = _parse_recurrence_excluded_dates(excluded_raw)
+
+    if frequency not in dict(BookingSeries.FREQUENCY_CHOICES):
+        raise forms.ValidationError({
+            'recurrence_frequency': 'Выберите частоту повторения'
+        })
+
+    if interval < 1:
+        raise forms.ValidationError({
+            'recurrence_interval': 'Интервал должен быть не меньше 1'
+        })
+
+    if frequency == BookingSeries.FREQUENCY_WEEKLY:
+        weekdays = [int(day) for day in weekdays] or [start_datetime.weekday()]
+        if any(day not in range(0, 7) for day in weekdays):
+            raise forms.ValidationError({
+                'recurrence_weekdays': 'Выберите корректные дни недели'
+            })
+    else:
+        weekdays = []
+
+    max_occurrences = 200
+    if end_type == 'count':
+        if not occurrences:
+            raise forms.ValidationError({
+                'recurrence_occurrences': 'Укажите количество повторов'
+            })
+        if occurrences < 2:
+            raise forms.ValidationError({
+                'recurrence_occurrences': 'Количество повторов должно быть больше 1'
+            })
+        if occurrences > max_occurrences:
+            raise forms.ValidationError({
+                'recurrence_occurrences': f'Количество повторов не может превышать {max_occurrences}'
+            })
+        end_date = None
+    elif end_type == 'until':
+        if not end_date:
+            raise forms.ValidationError({
+                'recurrence_end_date': 'Укажите дату окончания'
+            })
+        if end_date < start_datetime.date():
+            raise forms.ValidationError({
+                'recurrence_end_date': 'Дата окончания должна быть позже даты начала'
+            })
+        if (end_date - start_datetime.date()).days > 365:
+            raise forms.ValidationError({
+                'recurrence_end_date': 'Диапазон повторов не может превышать один год'
+            })
+        occurrences = None
+    else:
+        raise forms.ValidationError({
+            'recurrence_end_type': 'Выберите способ завершения повторов'
+        })
+
+    parsed_excluded = []
+    for iso_value in excluded_dates:
+        try:
+            parsed_date = datetime.date.fromisoformat(str(iso_value))
+        except ValueError:
+            raise forms.ValidationError({
+                'recurrence_excluded_dates': 'Некорректный формат даты для исключения'
+            })
+        if parsed_date < start_datetime.date():
+            continue
+        parsed_excluded.append(parsed_date.isoformat())
+
+    return {
+        'frequency': frequency,
+        'interval': interval,
+        'end_type': end_type,
+        'end_date': end_date,
+        'occurrences': occurrences,
+        'weekdays': weekdays,
+        'excluded_dates': parsed_excluded,
+    }
 
 
 class SelectServiceForm(forms.Form):
@@ -59,6 +185,78 @@ class QuickBookingForm(forms.Form):
         required=True,
         input_formats=['%Y-%m-%dT%H:%M', '%Y-%m-%d %H:%M', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%d %H:%M:%S']
     )
+    recurrence_enabled = forms.BooleanField(
+        required=False,
+        label='Повторять бронирование',
+        widget=forms.CheckboxInput(attrs={'class': 'form-check-input'})
+    )
+    recurrence_frequency = forms.ChoiceField(
+        choices=BookingSeries.FREQUENCY_CHOICES,
+        required=False,
+        label='Частота повтора',
+        widget=forms.Select(attrs={'class': 'form-select'})
+    )
+    recurrence_interval = forms.IntegerField(
+        required=False,
+        min_value=1,
+        initial=1,
+        label='Интервал',
+        widget=forms.NumberInput(attrs={'class': 'form-control', 'min': 1})
+    )
+    recurrence_end_type = forms.ChoiceField(
+        choices=RECURRENCE_END_CHOICES,
+        required=False,
+        initial='count',
+        label='Окончание повтора',
+        widget=forms.Select(attrs={'class': 'form-select'})
+    )
+    recurrence_end_date = forms.DateField(
+        required=False,
+        widget=forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
+        label='Дата окончания'
+    )
+    recurrence_occurrences = forms.IntegerField(
+        required=False,
+        min_value=2,
+        widget=forms.NumberInput(attrs={'class': 'form-control', 'min': 2}),
+        label='Количество повторов'
+    )
+    recurrence_weekdays = forms.MultipleChoiceField(
+        choices=WEEKDAY_CHOICES,
+        required=False,
+        widget=forms.CheckboxSelectMultiple(attrs={'class': 'form-check-input'}),
+        label='Дни недели'
+    )
+    recurrence_excluded_dates = forms.CharField(
+        required=False,
+        widget=forms.HiddenInput()
+    )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        start_datetime = cleaned_data.get('start_datetime')
+        if not start_datetime:
+            return cleaned_data
+
+        if isinstance(start_datetime, str):
+            parsed = parse_datetime(start_datetime)
+            if parsed is None:
+                try:
+                    parsed = datetime.datetime.strptime(start_datetime[:16], '%Y-%m-%dT%H:%M')
+                except ValueError:
+                    parsed = None
+            start_datetime = parsed
+
+        if start_datetime is None:
+            return cleaned_data
+
+        if timezone.is_naive(start_datetime):
+            start_datetime = timezone.make_aware(start_datetime)
+
+        recurrence = validate_recurrence(cleaned_data, timezone.localtime(start_datetime))
+        cleaned_data['recurrence_payload'] = recurrence
+        cleaned_data['start_datetime'] = start_datetime
+        return cleaned_data
 
 
 class SpecialistScheduleForm(forms.ModelForm):
@@ -183,6 +381,62 @@ class BookingEditForm(forms.ModelForm):
         required=True,
         empty_label='-- Выберите кабинет --'
     )
+    recurrence_enabled = forms.BooleanField(
+        required=False,
+        label='Повторять бронирование',
+        widget=forms.CheckboxInput(attrs={'class': 'form-check-input'})
+    )
+    recurrence_frequency = forms.ChoiceField(
+        choices=BookingSeries.FREQUENCY_CHOICES,
+        required=False,
+        label='Частота повтора',
+        widget=forms.Select(attrs={'class': 'form-select'})
+    )
+    recurrence_interval = forms.IntegerField(
+        required=False,
+        min_value=1,
+        initial=1,
+        label='Интервал',
+        widget=forms.NumberInput(attrs={'class': 'form-control', 'min': 1})
+    )
+    recurrence_end_type = forms.ChoiceField(
+        choices=RECURRENCE_END_CHOICES,
+        required=False,
+        initial='count',
+        label='Окончание повтора',
+        widget=forms.Select(attrs={'class': 'form-select'})
+    )
+    recurrence_end_date = forms.DateField(
+        required=False,
+        widget=forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
+        label='Дата окончания'
+    )
+    recurrence_occurrences = forms.IntegerField(
+        required=False,
+        min_value=2,
+        widget=forms.NumberInput(attrs={'class': 'form-control', 'min': 2}),
+        label='Количество повторов'
+    )
+    recurrence_weekdays = forms.MultipleChoiceField(
+        choices=WEEKDAY_CHOICES,
+        required=False,
+        widget=forms.CheckboxSelectMultiple(attrs={'class': 'form-check-input'}),
+        label='Дни недели'
+    )
+    recurrence_excluded_dates = forms.CharField(
+        required=False,
+        widget=forms.HiddenInput()
+    )
+    apply_scope = forms.ChoiceField(
+        choices=[
+            ('single', 'Применить только к этому бронированию'),
+            ('series', 'Применить ко всей серии'),
+        ],
+        required=False,
+        widget=forms.RadioSelect,
+        label='Применить изменения',
+        initial='single'
+    )
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -194,6 +448,28 @@ class BookingEditForm(forms.ModelForm):
             self.initial['service_variant'] = self.instance.service_variant
             self.initial['specialist'] = self.instance.specialist
             self.initial['cabinet'] = self.instance.cabinet
+            series = self.instance.series
+            if series:
+                self.initial['recurrence_enabled'] = True
+                self.initial['recurrence_frequency'] = series.frequency
+                self.initial['recurrence_interval'] = series.interval
+                if series.occurrence_count:
+                    self.initial['recurrence_end_type'] = 'count'
+                    self.initial['recurrence_occurrences'] = series.occurrence_count
+                else:
+                    self.initial['recurrence_end_type'] = 'until'
+                    self.initial['recurrence_end_date'] = series.end_date
+                self.initial['recurrence_weekdays'] = [str(day) for day in (series.weekdays or [])]
+                if series.excluded_dates:
+                    self.initial['recurrence_excluded_dates'] = json.dumps(series.excluded_dates, ensure_ascii=False)
+                self.initial['apply_scope'] = 'single'
+            else:
+                self.initial['recurrence_enabled'] = False
+                self.fields['apply_scope'].widget = forms.HiddenInput()
+        else:
+            if 'start_datetime' in self.fields:
+                self.fields['start_datetime'].initial = timezone.localtime(timezone.now()).strftime('%Y-%m-%dT%H:%M')
+            self.fields['apply_scope'].widget = forms.HiddenInput()
     
     def clean(self):
         cleaned_data = super().clean()
@@ -255,7 +531,18 @@ class BookingEditForm(forms.ModelForm):
             raise forms.ValidationError({
                 'start_datetime': '; '.join(conflict_messages) if conflict_messages else 'Выбранное время недоступно'
             })
-        
+
+        cleaned_data['start_datetime'] = start_time
+
+        scope = cleaned_data.get('apply_scope') or 'single'
+        if scope not in {'single', 'series'}:
+            scope = 'single'
+        cleaned_data['apply_scope'] = scope
+
+        local_start = timezone.localtime(start_time)
+        recurrence = validate_recurrence(cleaned_data, local_start)
+        cleaned_data['recurrence_payload'] = recurrence
+
         return cleaned_data
     
     def save(self, commit=True):

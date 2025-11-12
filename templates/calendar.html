@@ -254,6 +254,72 @@
                         <input type="text" class="form-control" id="guest_room_number" name="guest_room_number">
                     </div>
 
+                    <div class="card border-warning-subtle mb-3" data-role="quick-recurrence-card">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                                <h6 class="mb-0"><i class="bi bi-arrow-repeat me-2 text-warning"></i>Повтор бронирования</h6>
+                                <div class="form-check form-switch m-0">
+                                    <input class="form-check-input" type="checkbox" id="quick_recurrence_enabled" name="recurrence_enabled">
+                                    <label class="form-check-label ms-2" for="quick_recurrence_enabled">Включить повтор</label>
+                                </div>
+                            </div>
+                            <div class="recurrence-settings d-none" data-role="quick-recurrence-settings">
+                                <div class="row g-3 mb-3">
+                                    <div class="col-12 col-md-6">
+                                        <label class="form-label" for="quick_recurrence_frequency">Частота</label>
+                                        <select class="form-select" id="quick_recurrence_frequency" name="recurrence_frequency">
+                                            {% for value, label in quick_form.recurrence_frequency.field.choices %}
+                                            <option value="{{ value }}">{{ label }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="col-12 col-md-6">
+                                        <label class="form-label" for="quick_recurrence_interval">Каждые</label>
+                                        <div class="input-group">
+                                            <input type="number" class="form-control" id="quick_recurrence_interval" name="recurrence_interval" min="1" value="1">
+                                            <span class="input-group-text" data-role="quick-recurrence-interval-label">дней</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="mb-3 d-none" data-role="quick-recurrence-weekdays">
+                                    <label class="form-label d-block">Повторять по дням недели</label>
+                                    <div class="d-flex flex-wrap gap-2">
+                                        {% for value, label in quick_form.recurrence_weekdays.field.choices %}
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="quick_weekday_{{ value }}" name="recurrence_weekdays" value="{{ value }}">
+                                            <label class="form-check-label ms-1" for="quick_weekday_{{ value }}">{{ label }}</label>
+                                        </div>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                                <div class="row g-3 mb-3 align-items-end">
+                                    <div class="col-12 col-md-6">
+                                        <label class="form-label" for="quick_recurrence_end_type">Завершить</label>
+                                        <select class="form-select" id="quick_recurrence_end_type" name="recurrence_end_type">
+                                            {% for value, label in quick_form.recurrence_end_type.field.choices %}
+                                            <option value="{{ value }}" {% if quick_form.recurrence_end_type.field.initial == value %}selected{% endif %}>{{ label }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="col-12 col-md-6" data-role="quick-recurrence-count-field">
+                                        <label class="form-label" for="quick_recurrence_occurrences">Количество повторов</label>
+                                        <input type="number" class="form-control" id="quick_recurrence_occurrences" name="recurrence_occurrences" min="2" value="2">
+                                    </div>
+                                    <div class="col-12 col-md-6 d-none" data-role="quick-recurrence-until-field">
+                                        <label class="form-label" for="quick_recurrence_end_date">Дата окончания</label>
+                                        <input type="date" class="form-control" id="quick_recurrence_end_date" name="recurrence_end_date">
+                                    </div>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label" for="quick_recurrence_excluded_display">Пропустить даты</label>
+                                    <input type="text" class="form-control" id="quick_recurrence_excluded_display" data-role="quick-recurrence-excluded-display" placeholder="Например: 20.11.2025, 25.11.2025">
+                                    <input type="hidden" id="quick_recurrence_excluded_dates" name="recurrence_excluded_dates">
+                                    <div class="form-text text-muted">Введите даты через запятую. Используйте формат ДД.ММ.ГГГГ.</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <input type="hidden" id="start_datetime" name="start_datetime" value="">
                 </div>
                 <div class="modal-footer">
@@ -324,6 +390,18 @@
     let currentWidthMode = 'standard'; // standard | wide | fullscreen
     let currentDate = null;
     let quickBookingModal = null;
+    const quickBookingFormEl = document.getElementById('quickBookingForm');
+    const quickRecurrenceToggle = document.getElementById('quick_recurrence_enabled');
+    const quickRecurrenceSettings = document.querySelector('[data-role="quick-recurrence-settings"]');
+    const quickRecurrenceFrequency = document.getElementById('quick_recurrence_frequency');
+    const quickRecurrenceIntervalLabel = document.querySelector('[data-role="quick-recurrence-interval-label"]');
+    const quickRecurrenceWeekdaysBlock = document.querySelector('[data-role="quick-recurrence-weekdays"]');
+    const quickRecurrenceEndType = document.getElementById('quick_recurrence_end_type');
+    const quickRecurrenceCountField = document.querySelector('[data-role="quick-recurrence-count-field"]');
+    const quickRecurrenceUntilField = document.querySelector('[data-role="quick-recurrence-until-field"]');
+    const quickRecurrenceOccurrences = document.getElementById('quick_recurrence_occurrences');
+    const quickRecurrenceExcludedDisplay = document.querySelector('[data-role="quick-recurrence-excluded-display"]');
+    const quickRecurrenceExcludedHidden = document.getElementById('quick_recurrence_excluded_dates');
     let bookingEditModal;
     const bookingEditModalEl = document.getElementById('bookingEditModal');
     const bookingEditModalBody = document.getElementById('bookingEditModalBody');
@@ -550,6 +628,133 @@
         }
     }
 
+    function toggleQuickRecurrenceSettings(forceEnabled) {
+        if (!quickRecurrenceSettings || !quickRecurrenceToggle) return;
+        const enabled = typeof forceEnabled === 'boolean' ? forceEnabled : quickRecurrenceToggle.checked;
+        quickRecurrenceSettings.classList.toggle('d-none', !enabled);
+        if (!enabled) {
+            if (quickRecurrenceExcludedDisplay) quickRecurrenceExcludedDisplay.value = '';
+            if (quickRecurrenceExcludedHidden) quickRecurrenceExcludedHidden.value = '';
+        }
+    }
+
+    function updateQuickRecurrenceIntervalLabel() {
+        if (!quickRecurrenceIntervalLabel || !quickRecurrenceFrequency) return;
+        const freq = quickRecurrenceFrequency.value;
+        let suffix = 'дней';
+        switch (freq) {
+            case 'weekly':
+                suffix = 'недель';
+                break;
+            case 'monthly':
+                suffix = 'месяцев';
+                break;
+            case 'yearly':
+                suffix = 'лет';
+                break;
+        }
+        quickRecurrenceIntervalLabel.textContent = suffix;
+    }
+
+    function updateQuickRecurrenceFrequencyState() {
+        updateQuickRecurrenceIntervalLabel();
+        if (!quickRecurrenceWeekdaysBlock) return;
+        if (quickRecurrenceFrequency && quickRecurrenceFrequency.value === 'weekly') {
+            quickRecurrenceWeekdaysBlock.classList.remove('d-none');
+        } else {
+            quickRecurrenceWeekdaysBlock.classList.add('d-none');
+        }
+    }
+
+    function updateQuickRecurrenceEndState() {
+        if (!quickRecurrenceEndType) return;
+        const type = quickRecurrenceEndType.value || 'count';
+        if (quickRecurrenceCountField) {
+            quickRecurrenceCountField.classList.toggle('d-none', type !== 'count');
+        }
+        if (quickRecurrenceUntilField) {
+            quickRecurrenceUntilField.classList.toggle('d-none', type !== 'until');
+        }
+    }
+
+    function syncQuickExcludedDates() {
+        if (!quickRecurrenceExcludedHidden || !quickRecurrenceExcludedDisplay) return;
+        const raw = quickRecurrenceExcludedDisplay.value.trim();
+        if (!raw) {
+            quickRecurrenceExcludedHidden.value = '';
+            return;
+        }
+        const parts = raw.split(',').map((item) => item.trim()).filter(Boolean);
+        const isoDates = [];
+        parts.forEach((item) => {
+            if (!item) return;
+            const normalized = item.replace(/\//g, '.');
+            const isoMatch = normalized.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+            if (isoMatch) {
+                isoDates.push(`${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`);
+                return;
+            }
+            const match = normalized.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+            if (match) {
+                const day = match[1].padStart(2, '0');
+                const month = match[2].padStart(2, '0');
+                const year = match[3];
+                isoDates.push(`${year}-${month}-${day}`);
+            }
+        });
+        quickRecurrenceExcludedHidden.value = isoDates.length ? JSON.stringify(isoDates) : '';
+    }
+
+    function resetQuickRecurrenceControls() {
+        if (!quickRecurrenceToggle) return;
+        quickRecurrenceToggle.checked = false;
+        toggleQuickRecurrenceSettings(false);
+        if (quickRecurrenceFrequency && quickRecurrenceFrequency.options.length) {
+            quickRecurrenceFrequency.value = quickRecurrenceFrequency.options[0].value;
+        }
+        if (quickRecurrenceOccurrences) {
+            quickRecurrenceOccurrences.value = 2;
+        }
+        if (quickRecurrenceEndType) {
+            quickRecurrenceEndType.value = 'count';
+        }
+        if (quickRecurrenceWeekdaysBlock) {
+            quickRecurrenceWeekdaysBlock.querySelectorAll('input[type=\"checkbox\"]').forEach((checkbox) => {
+                checkbox.checked = false;
+            });
+        }
+        if (quickRecurrenceExcludedDisplay) quickRecurrenceExcludedDisplay.value = '';
+        if (quickRecurrenceExcludedHidden) quickRecurrenceExcludedHidden.value = '';
+        updateQuickRecurrenceFrequencyState();
+        updateQuickRecurrenceEndState();
+    }
+
+    if (quickRecurrenceToggle) {
+        quickRecurrenceToggle.addEventListener('change', function() {
+            toggleQuickRecurrenceSettings();
+        });
+    }
+
+    if (quickRecurrenceFrequency) {
+        quickRecurrenceFrequency.addEventListener('change', function() {
+            updateQuickRecurrenceFrequencyState();
+        });
+    }
+
+    if (quickRecurrenceEndType) {
+        quickRecurrenceEndType.addEventListener('change', function() {
+            updateQuickRecurrenceEndState();
+        });
+    }
+
+    if (quickRecurrenceExcludedDisplay) {
+        quickRecurrenceExcludedDisplay.addEventListener('blur', syncQuickExcludedDates);
+    }
+
+    toggleQuickRecurrenceSettings(quickRecurrenceToggle ? quickRecurrenceToggle.checked : false);
+    updateQuickRecurrenceFrequencyState();
+    updateQuickRecurrenceEndState();
+
     function openBookingEditModal(bookingId) {
         if (!bookingEditModalEl || !bookingEditModalBody) {
             window.location.href = `/booking/${bookingId}/`;
@@ -722,6 +927,7 @@
         document.getElementById('start_datetime').value = localDateTime;
         document.getElementById('specialist').innerHTML = '<option value="">Сначала выберите услугу</option>';
         document.getElementById('cabinet').innerHTML = '<option value="">Сначала выберите услугу, специалиста и время</option>';
+        resetQuickRecurrenceControls();
 
         // Показываем модальное окно
         if (!quickBookingModal) {
@@ -750,6 +956,7 @@
         if (!modalElement) return;
 
         quickBookingModal = new bootstrap.Modal(modalElement);
+        resetQuickRecurrenceControls();
 
         const cancelButton = modalElement.querySelector('[data-action="quick-booking-cancel"]');
         if (cancelButton) {
@@ -958,6 +1165,8 @@
     // Обработка отправки формы
     document.getElementById('quickBookingForm').addEventListener('submit', function(e) {
         e.preventDefault();
+
+        syncQuickExcludedDates();
 
         const formData = new FormData(this);
         const submitButton = this.querySelector('button[type="submit"]');

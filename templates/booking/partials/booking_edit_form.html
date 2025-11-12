@@ -65,6 +65,115 @@
         </div>
     </div>
 
+    <div class="card border-warning-subtle mt-4" data-role="recurrence-card">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                <div class="d-flex align-items-center gap-2">
+                    <h6 class="mb-0"><i class="bi bi-arrow-repeat me-2 text-warning"></i>{% trans "Повтор бронирования" %}</h6>
+                    {% if series %}
+                    <span class="badge bg-warning text-dark">{% trans "Серия" %}: {{ series_count }}</span>
+                    {% endif %}
+                </div>
+                <div class="form-check form-switch m-0">
+                    {{ form.recurrence_enabled }}
+                    <label class="form-check-label ms-2" for="{{ form.recurrence_enabled.id_for_label }}">{% trans "Включить повтор" %}</label>
+                </div>
+            </div>
+            {% if form.recurrence_enabled.errors %}
+            <div class="text-danger mb-2 small">{{ form.recurrence_enabled.errors }}</div>
+            {% endif %}
+            <div class="recurrence-settings {% if not form.recurrence_enabled.value %}d-none{% endif %}" data-role="recurrence-settings">
+                <div class="row g-3 mb-3">
+                    <div class="col-12 col-md-6">
+                        <label class="form-label" for="{{ form.recurrence_frequency.id_for_label }}">{% trans "Частота" %}</label>
+                        {{ form.recurrence_frequency }}
+                        {% if form.recurrence_frequency.errors %}
+                        <div class="text-danger small mt-1">{{ form.recurrence_frequency.errors }}</div>
+                        {% endif %}
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <label class="form-label" for="{{ form.recurrence_interval.id_for_label }}">{% trans "Каждые" %}</label>
+                        <div class="input-group">
+                            {{ form.recurrence_interval }}
+                            <span class="input-group-text" data-role="recurrence-interval-label">{% trans "дней" %}</span>
+                        </div>
+                        {% if form.recurrence_interval.errors %}
+                        <div class="text-danger small mt-1">{{ form.recurrence_interval.errors }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="mb-3 {% if form.recurrence_frequency.value != 'weekly' %}d-none{% endif %}" data-role="recurrence-weekdays">
+                    <label class="form-label d-block">{% trans "Повторять по дням недели" %}</label>
+                    <div class="d-flex flex-wrap gap-2">
+                        {% for checkbox in form.recurrence_weekdays %}
+                        <div class="form-check">
+                            {{ checkbox.tag }}
+                            <label class="form-check-label ms-1" for="{{ checkbox.id_for_label }}">{{ checkbox.choice_label }}</label>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% if form.recurrence_weekdays.errors %}
+                    <div class="text-danger small mt-1">{{ form.recurrence_weekdays.errors }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="row g-3 mb-3 align-items-end">
+                    <div class="col-12 col-md-6">
+                        <label class="form-label" for="{{ form.recurrence_end_type.id_for_label }}">{% trans "Завершить" %}</label>
+                        {{ form.recurrence_end_type }}
+                        {% if form.recurrence_end_type.errors %}
+                        <div class="text-danger small mt-1">{{ form.recurrence_end_type.errors }}</div>
+                        {% endif %}
+                    </div>
+                    <div class="col-12 col-md-6" data-role="recurrence-count-field">
+                        <label class="form-label" for="{{ form.recurrence_occurrences.id_for_label }}">{% trans "Количество повторов" %}</label>
+                        {{ form.recurrence_occurrences }}
+                        {% if form.recurrence_occurrences.errors %}
+                        <div class="text-danger small mt-1">{{ form.recurrence_occurrences.errors }}</div>
+                        {% endif %}
+                    </div>
+                    <div class="col-12 col-md-6 d-none" data-role="recurrence-until-field">
+                        <label class="form-label" for="{{ form.recurrence_end_date.id_for_label }}">{% trans "Дата окончания" %}</label>
+                        {{ form.recurrence_end_date }}
+                        {% if form.recurrence_end_date.errors %}
+                        <div class="text-danger small mt-1">{{ form.recurrence_end_date.errors }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label" for="recurrenceExcludedDisplay">{% trans "Пропустить даты" %}</label>
+                    <input type="text" class="form-control" id="recurrenceExcludedDisplay" data-role="recurrence-excluded-display" placeholder="{% trans "Например: 20.11.2025, 25.11.2025" %}">
+                    {{ form.recurrence_excluded_dates }}
+                    <div class="form-text text-muted">{% trans "Введите даты через запятую. Используйте формат ДД.ММ.ГГГГ." %}</div>
+                    {% if form.recurrence_excluded_dates.errors %}
+                    <div class="text-danger small mt-1">{{ form.recurrence_excluded_dates.errors }}</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if form.apply_scope.is_hidden %}
+        {{ form.apply_scope }}
+    {% else %}
+    <div class="mt-4" data-role="apply-scope">
+        <label class="form-label d-block mb-2">{% trans "Применить изменения" %}</label>
+        <div class="d-flex flex-column gap-2">
+            {% for choice in form.apply_scope %}
+            <div class="form-check">
+                {{ choice.tag }}
+                <label class="form-check-label ms-1" for="{{ choice.id_for_label }}">{{ choice.choice_label }}</label>
+            </div>
+            {% endfor %}
+        </div>
+        {% if form.apply_scope.errors %}
+        <div class="text-danger small mt-1">{{ form.apply_scope.errors }}</div>
+        {% endif %}
+    </div>
+    {% endif %}
+
     <div data-role="validation-message" class="alert d-none mb-3"></div>
 
     {% if form.non_field_errors %}

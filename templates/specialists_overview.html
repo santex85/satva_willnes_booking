@@ -36,10 +36,23 @@
                 <th scope="row" class="text-nowrap">
                     <div class="fw-semibold">{{ item.specialist.full_name }}</div>
                     {% if item.services %}
-                    <div class="small text-muted">
-                        {% for service in item.services %}
-                        <span class="badge bg-primary-subtle text-primary border-0 me-1 mb-1">{{ service.name }}</span>
-                        {% endfor %}
+                    <button
+                        class="btn btn-sm btn-outline-primary mt-2"
+                        type="button"
+                        data-bs-toggle="collapse"
+                        data-bs-target="#specialist-services-{{ forloop.counter }}"
+                        aria-expanded="false"
+                        aria-controls="specialist-services-{{ forloop.counter }}"
+                        data-services-toggle
+                    >
+                        <i class="bi bi-list-ul"></i> Показать услуги
+                    </button>
+                    <div class="collapse mt-2" id="specialist-services-{{ forloop.counter }}">
+                        <div class="small text-muted">
+                            {% for service in item.services %}
+                            <span class="badge bg-primary-subtle text-primary border-0 me-1 mb-1">{{ service.name }}</span>
+                            {% endfor %}
+                        </div>
                     </div>
                     {% else %}
                     <span class="badge bg-warning text-dark">Услуги не назначены</span>
@@ -69,5 +82,27 @@
     </div>
 </div>
 {% endif %}
+{% endblock %}
+
+{% block extra_js %}
+{{ block.super }}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const toggleButtons = document.querySelectorAll('[data-services-toggle]');
+    toggleButtons.forEach((btn) => {
+        const targetSelector = btn.getAttribute('data-bs-target');
+        if (!targetSelector) return;
+        const targetEl = document.querySelector(targetSelector);
+        if (!targetEl) return;
+
+        targetEl.addEventListener('show.bs.collapse', () => {
+            btn.innerHTML = '<i class="bi bi-list-ul"></i> Скрыть услуги';
+        });
+        targetEl.addEventListener('hide.bs.collapse', () => {
+            btn.innerHTML = '<i class="bi bi-list-ul"></i> Показать услуги';
+        });
+    });
+});
+</script>
 {% endblock %}
 

@@ -44,5 +44,24 @@ def group_required(*group_names):
 # Готовые декораторы для удобства
 admin_required = group_required('Admin', 'SuperAdmin')
 specialist_required = group_required('Specialist')
+def staff_required(view_func):
+    """
+    Декоратор для сотрудников (Django is_staff).
+    """
+
+    def wrapper(request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.path.startswith('/api/'):
+                return JsonResponse({'error': 'Требуется авторизация'}, status=401)
+            return redirect_to_login(request.path)
+
+        if request.user.is_staff or request.user.is_superuser:
+            return view_func(request, *args, **kwargs)
+
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.path.startswith('/api/'):
+            return JsonResponse({'error': 'Доступ запрещен'}, status=403)
+        raise PermissionDenied
+
+    return wrapper
 
 

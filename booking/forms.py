@@ -4,7 +4,15 @@
 from django import forms
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
-from .models import ServiceVariant, SpecialistProfile, Cabinet, SpecialistSchedule, Booking, BookingSeries
+from .models import (
+    ServiceVariant,
+    SpecialistProfile,
+    Cabinet,
+    SpecialistSchedule,
+    Booking,
+    BookingSeries,
+    CabinetClosure,
+)
 import datetime
 import json
 
@@ -574,4 +582,60 @@ class BookingEditForm(forms.ModelForm):
         if commit:
             instance.save()
         return instance
+
+
+class CabinetClosureForm(forms.ModelForm):
+    """Форма создания закрытия кабинета."""
+
+    class Meta:
+        model = CabinetClosure
+        fields = ['cabinet', 'start_time', 'end_time', 'reason']
+        widgets = {
+            'cabinet': forms.Select(attrs={'class': 'form-select'}),
+            'start_time': forms.DateTimeInput(attrs={'type': 'datetime-local', 'class': 'form-control'}),
+            'end_time': forms.DateTimeInput(attrs={'type': 'datetime-local', 'class': 'form-control'}),
+            'reason': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Например: техобслуживание'}),
+        }
+        labels = {
+            'cabinet': 'Кабинет',
+            'start_time': 'Начало закрытия',
+            'end_time': 'Окончание закрытия',
+            'reason': 'Причина',
+        }
+
+    def clean(self):
+        cleaned_data = super().clean()
+        cabinet = cleaned_data.get('cabinet')
+        start_time = cleaned_data.get('start_time')
+        end_time = cleaned_data.get('end_time')
+
+        if not all([cabinet, start_time, end_time]):
+            return cleaned_data
+
+        if end_time <= start_time:
+            raise forms.ValidationError('Окончание закрытия должно быть позже начала.')
+
+        overlap_filter = CabinetClosure.objects.filter(
+            cabinet=cabinet,
+            start_time__lt=end_time,
+            end_time__gt=start_time,
+        )
+        if self.instance.pk:
+            overlap_filter = overlap_filter.exclude(pk=self.instance.pk)
+        if overlap_filter.exists():
+            raise forms.ValidationError('На выбранный период уже запланировано закрытие кабинета.')
+
+        conflicting_bookings = Booking.objects.filter(
+            cabinet=cabinet,
+            status='confirmed',
+            start_time__lt=end_time,
+            end_time__gt=start_time,
+        )
+        if conflicting_bookings.exists():
+            raise forms.ValidationError(
+                'В выбранный период у кабинета есть подтверждённые бронирования. '
+                'Перенесите или отмените их перед закрытием.'
+            )
+
+        return cleaned_data
 

@@ -14,6 +14,7 @@ from .models import (
     Booking,
     ScheduleTemplate,
     ScheduleTemplateDay,
+    CabinetClosure,
 )
 
 
@@ -199,3 +200,4 @@ admin.site.register(CabinetType)
 admin.site.register(Cabinet)
 admin.site.register(SpecialistSchedule, SpecialistScheduleAdmin)
 admin.site.register(ServiceVariant)
+admin.site.register(CabinetClosure)

@@ -4,7 +4,15 @@
 from django.db.models import Q
 from django.utils import timezone
 import datetime
-from .models import ServiceVariant, SpecialistSchedule, Booking, SystemSettings, Cabinet, SpecialistProfile
+from .models import (
+    ServiceVariant,
+    SpecialistSchedule,
+    Booking,
+    SystemSettings,
+    Cabinet,
+    SpecialistProfile,
+    CabinetClosure,
+)
 
 
 def find_available_slots(date: datetime.date, service_variant: ServiceVariant) -> list:
@@ -55,6 +63,15 @@ def find_available_slots(date: datetime.date, service_variant: ServiceVariant) -
         start_time__range=(day_start, day_end),
         status='confirmed'
     ).select_related('specialist', 'cabinet')
+
+    closures = CabinetClosure.objects.filter(
+        cabinet__in=valid_cabinets,
+        start_time__lt=day_end,
+        end_time__gt=day_start,
+    ).select_related('cabinet')
+    closures_by_cabinet = {}
+    for closure in closures:
+        closures_by_cabinet.setdefault(closure.cabinet_id, []).append(closure)
     
     # 5. Генерируем "сетку" времени (напр., с шагом 15 мин)
     time_increment = 15  # Шаг проверки
@@ -85,13 +102,19 @@ def find_available_slots(date: datetime.date, service_variant: ServiceVariant) -
             if not is_specialist_busy:
                 # 7. Находим все доступные кабинеты для этого слота
                 # Находим кабинеты, занятые в этот слот КЕМ УГОДНО
-                busy_cabinets_ids = existing_bookings.filter(
+                busy_cabinets_ids = set(existing_bookings.filter(
                     start_time__lt=slot_datetime_end,
                     end_time__gt=slot_datetime_start
-                ).values_list('cabinet_id', flat=True)
-                
+                ).values_list('cabinet_id', flat=True))
+
+                for cabinet_id, cabinet_closures in closures_by_cabinet.items():
+                    for closure in cabinet_closures:
+                        if closure.start_time < slot_datetime_end and closure.end_time > slot_datetime_start:
+                            busy_cabinets_ids.add(cabinet_id)
+                            break
+
                 # Находим все свободные кабинеты нужного типа
-                available_cabinets = list(valid_cabinets.exclude(id__in=busy_cabinets_ids))
+                available_cabinets = list(valid_cabinets.exclude(id__in=list(busy_cabinets_ids)))
                 
                 if available_cabinets:
                     # Создаем ключ для группировки: время + специалист
@@ -219,6 +242,15 @@ def check_booking_conflicts(start_time, service_variant, specialist, cabinet, ex
     cabinet_conflicts = overlapping_bookings.filter(cabinet=cabinet)
     if cabinet_conflicts.exists():
         conflicts['cabinet_busy'] = True
+
+    # Проверяем плановые закрытия кабинета
+    if not conflicts['cabinet_not_available']:
+        if CabinetClosure.objects.filter(
+            cabinet=cabinet,
+            start_time__lt=end_time,
+            end_time__gt=start_time
+        ).exists():
+            conflicts['cabinet_not_available'] = True
     
     # Возвращаем None если нет конфликтов, иначе словарь с конфликтами
     if any(conflicts.values()):

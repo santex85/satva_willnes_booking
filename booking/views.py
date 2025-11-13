@@ -15,8 +15,17 @@ import datetime
 import logging
 
 from django.contrib.auth.models import User, Group
-from .models import Booking, SpecialistProfile, Cabinet, ServiceVariant, SpecialistSchedule, ScheduleTemplate, BookingSeries
-from .decorators import admin_required, specialist_required
+from .models import (
+    Booking,
+    SpecialistProfile,
+    Cabinet,
+    ServiceVariant,
+    SpecialistSchedule,
+    ScheduleTemplate,
+    BookingSeries,
+    CabinetClosure,
+)
+from .decorators import admin_required, specialist_required, staff_required
 from .utils import find_available_slots, check_booking_conflicts
 from .forms import (
     QuickBookingForm,
@@ -24,7 +33,8 @@ from .forms import (
     SpecialistScheduleForm,
     ReportForm,
     BookingEditForm,
-    SpecialistRegistrationForm
+    SpecialistRegistrationForm,
+    CabinetClosureForm,
 )
 
 from collections import defaultdict
@@ -266,10 +276,18 @@ def calendar_view(request):
             'border_color': colors['border']
         })
     
+    can_manage_closures = request.user.is_staff or request.user.is_superuser
+    closure_form = None
+    if can_manage_closures:
+        closure_form = CabinetClosureForm()
+        closure_form.fields['cabinet'].queryset = Cabinet.objects.filter(is_active=True).order_by('name')
+
     return render(request, 'calendar.html', {
         'quick_form': quick_form,
         'service_groups': service_groups,
-        'cabinets_with_colors': cabinets_with_colors
+        'cabinets_with_colors': cabinets_with_colors,
+        'closure_form': closure_form,
+        'can_manage_closures': can_manage_closures,
     })
 
 
@@ -377,6 +395,7 @@ def calendar_feed_view(request):
             'end': end_time.isoformat(),
             'resourceId': b.specialist.id,  # Для вида "по специалистам"
             'extendedProps': {
+                'eventType': 'booking',
                 'cabinetId': b.cabinet.id,  # Для вида "по кабинетам"
                 'status': b.status,
                 'specialist': b.specialist.full_name,
@@ -389,6 +408,51 @@ def calendar_feed_view(request):
             'textColor': colors['text']
         })
     
+    return JsonResponse(events, safe=False)
+
+
+@staff_required
+def cabinet_closure_feed_view(request):
+    """
+    Возвращает события-закрытия кабинетов для FullCalendar.
+    """
+    start = request.GET.get('start')
+    end = request.GET.get('end')
+
+    try:
+        start_date = timezone.datetime.fromisoformat(start.replace('Z', '+00:00'))
+        end_date = timezone.datetime.fromisoformat(end.replace('Z', '+00:00'))
+    except (ValueError, AttributeError) as e:
+        logger.error(f"Invalid date format in cabinet_closure_feed_view: {e}")
+        return JsonResponse({'error': 'Invalid date format'}, status=400)
+
+    closures = CabinetClosure.objects.filter(
+        start_time__lt=end_date,
+        end_time__gt=start_date
+    ).select_related('cabinet').order_by('start_time')
+
+    can_delete = request.user.is_staff or request.user.is_superuser
+    events = []
+    for closure in closures:
+        events.append({
+            'id': closure.id,
+            'title': f"Кабинет {closure.cabinet.name} закрыт",
+            'start': closure.start_time.isoformat(),
+            'end': closure.end_time.isoformat(),
+            'allDay': False,
+            'editable': False,
+            'backgroundColor': '#adb5bd',
+            'borderColor': '#6c757d',
+            'textColor': '#212529',
+            'classNames': ['cabinet-closure-event'],
+            'extendedProps': {
+                'eventType': 'closure',
+                'cabinet': closure.cabinet.name,
+                'reason': closure.reason or '',
+                'canDelete': can_delete,
+            }
+        })
+
     return JsonResponse(events, safe=False)
 
 
@@ -543,6 +607,50 @@ def get_available_cabinets_view(request):
     except (ValueError, ServiceVariant.DoesNotExist, SpecialistProfile.DoesNotExist) as e:
         logger.error(f"Error getting available cabinets: {e}", exc_info=True)
         return JsonResponse({'error': 'Ошибка при получении доступных кабинетов'}, status=500)
+
+
+@staff_required
+@require_POST
+def create_cabinet_closure_view(request):
+    """
+    Создание закрытия кабинета.
+    """
+    form = CabinetClosureForm(request.POST)
+    if form.is_valid():
+        closure = form.save(commit=False)
+        closure.created_by = request.user
+        closure.save()
+        logger.info(
+            "Cabinet closure created by %s: cabinet=%s, start=%s, end=%s",
+            request.user.username,
+            closure.cabinet_id,
+            closure.start_time,
+            closure.end_time,
+        )
+        return JsonResponse({
+            'success': True,
+            'message': 'Закрытие кабинета создано',
+            'closure_id': closure.id,
+        })
+
+    logger.warning("Cabinet closure form invalid: %s", form.errors)
+    return JsonResponse({'success': False, 'errors': form.errors}, status=400)
+
+
+@staff_required
+@require_POST
+def delete_cabinet_closure_view(request, pk):
+    """
+    Удаление закрытия кабинета.
+    """
+    closure = get_object_or_404(CabinetClosure, pk=pk)
+    closure.delete()
+    logger.info(
+        "Cabinet closure %s deleted by %s",
+        pk,
+        request.user.username,
+    )
+    return JsonResponse({'success': True, 'message': 'Закрытие кабинета удалено'})
 
 
 # Booking wizard views

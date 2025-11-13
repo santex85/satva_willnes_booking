@@ -53,6 +53,12 @@
         background: #ff4d4f;
         border-color: #ff4d4f;
     }
+    .cabinet-closure-event {
+        background-color: #adb5bd !important;
+        border-color: #6c757d !important;
+        color: #212529 !important;
+        opacity: 0.85;
+    }
     .legend {
         display: flex;
         gap: 1rem;
@@ -145,6 +151,11 @@
         <button type="button" id="toggle-width-btn" class="btn btn-outline-secondary flex-fill flex-sm-grow-0" onclick="toggleCalendarWidth()">
             <i class="bi bi-arrows-expand"></i> Широкий режим
         </button>
+        {% if can_manage_closures %}
+        <button type="button" class="btn btn-outline-danger flex-fill flex-sm-grow-0" id="open-closure-modal-btn" onclick="openCabinetClosureModal()">
+            <i class="bi bi-door-closed"></i> Закрыть кабинет
+        </button>
+        {% endif %}
         <a href="{% url 'select_service' %}" class="btn btn-primary flex-fill flex-sm-grow-0">
             <i class="bi bi-plus-circle"></i> <span class="d-none d-sm-inline">Создать бронирование</span><span class="d-sm-none">Создать</span>
         </a>
@@ -193,6 +204,10 @@
                 <span>{{ item.cabinet.name }}</span>
             </div>
             {% endfor %}
+            <div class="legend-item">
+                <div class="legend-color" style="background-color: #adb5bd; border-color: #6c757d;"></div>
+                <span>Кабинет закрыт</span>
+            </div>
         </div>
 
         <div id="calendar"></div>
@@ -333,6 +348,77 @@
     </div>
 </div>
 
+{% if closure_form %}
+<!-- Модальное окно для закрытия кабинета -->
+<div class="modal fade" id="cabinetClosureModal" tabindex="-1" aria-labelledby="cabinetClosureModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="cabinetClosureModalLabel"><i class="bi bi-door-closed"></i> Закрыть кабинет</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="cabinetClosureForm">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <div class="alert alert-danger d-none" data-role="closure-error-non-field"></div>
+                    <div class="mb-3">
+                        <label class="form-label" for="{{ closure_form.cabinet.id_for_label }}">Кабинет</label>
+                        {{ closure_form.cabinet }}
+                        <div class="text-danger small mt-1 d-none" data-role="closure-error-cabinet"></div>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-12 col-md-6">
+                            <label class="form-label" for="{{ closure_form.start_time.id_for_label }}">Начало</label>
+                            {{ closure_form.start_time }}
+                            <div class="text-danger small mt-1 d-none" data-role="closure-error-start"></div>
+                        </div>
+                        <div class="col-12 col-md-6">
+                            <label class="form-label" for="{{ closure_form.end_time.id_for_label }}">Окончание</label>
+                            {{ closure_form.end_time }}
+                            <div class="text-danger small mt-1 d-none" data-role="closure-error-end"></div>
+                        </div>
+                    </div>
+                    <div class="mt-3">
+                        <label class="form-label" for="{{ closure_form.reason.id_for_label }}">Причина (опционально)</label>
+                        {{ closure_form.reason }}
+                        <div class="text-danger small mt-1 d-none" data-role="closure-error-reason"></div>
+                        <div class="form-text">Кратко опишите причину закрытия (например, техобслуживание).</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="submit" class="btn btn-danger">
+                        <i class="bi bi-door-closed-fill"></i> Закрыть
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Модальное окно подтверждения удаления закрытия -->
+<div class="modal fade" id="closureDeleteModal" tabindex="-1" aria-labelledby="closureDeleteModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title" id="closureDeleteModalLabel"><i class="bi bi-exclamation-triangle"></i> Удалить закрытие кабинета?</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-0">Вы уверены, что хотите отменить закрытие кабинета <strong id="closureDeleteCabinetName"></strong>?</p>
+                <small class="text-muted" id="closureDeletePeriod"></small>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                <button type="button" class="btn btn-danger" id="confirmClosureDeleteBtn">
+                    <i class="bi bi-trash"></i> Удалить
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <!-- Модальное окно для результатов -->
 <div class="modal fade" id="resultModal" tabindex="-1">
     <div class="modal-dialog">
@@ -383,6 +469,7 @@
     let calendar;
     let currentView = 'timeGridDay';
     let currentResourceType = 'specialist';
+    const canManageClosures = {{ can_manage_closures|yesno:"true,false" }};
     const SUPPORTED_VIEWS = ['dayGridMonth', 'timeGridWeek', 'timeGridThreeDay', 'timeGridDay'];
     const WIDTH_MODE_STORAGE_KEY = 'calendarWidthMode';
     const VIEW_STORAGE_KEY = 'calendarView';
@@ -390,6 +477,9 @@
     let currentWidthMode = 'standard'; // standard | wide | fullscreen
     let currentDate = null;
     let quickBookingModal = null;
+    const closureFeedUrl = "{% url 'calendar_closure_feed' %}";
+    const closureCreateUrl = "{% url 'create_cabinet_closure' %}";
+    const closureDeleteBaseUrl = "/calendar/closures/";
     const quickBookingFormEl = document.getElementById('quickBookingForm');
     const quickRecurrenceToggle = document.getElementById('quick_recurrence_enabled');
     const quickRecurrenceSettings = document.querySelector('[data-role="quick-recurrence-settings"]');
@@ -405,6 +495,15 @@
     let bookingEditModal;
     const bookingEditModalEl = document.getElementById('bookingEditModal');
     const bookingEditModalBody = document.getElementById('bookingEditModalBody');
+    const closureFormEl = document.getElementById('cabinetClosureForm');
+    const closureModalEl = document.getElementById('cabinetClosureModal');
+    const closureDeleteModalEl = document.getElementById('closureDeleteModal');
+    const closureDeleteCabinetNameEl = document.getElementById('closureDeleteCabinetName');
+    const closureDeletePeriodEl = document.getElementById('closureDeletePeriod');
+    const confirmClosureDeleteBtn = document.getElementById('confirmClosureDeleteBtn');
+    let cabinetClosureModal;
+    let closureDeleteModal;
+    let pendingClosureDeleteId = null;
 
     // Получаем CSRF token
     function getCookie(name) {
@@ -431,12 +530,25 @@
         initCalendar();
         updateWidthButton();
         initQuickBookingModal();
+        initCabinetClosureModals();
         attachNavigationControls();
         updateCalendarTitle();
     });
 
     function initCalendar() {
         const calendarEl = document.getElementById('calendar');
+
+        const eventSources = [
+            {
+                url: '/calendar/feed/',
+            }
+        ];
+        if (canManageClosures) {
+            eventSources.push({
+                url: closureFeedUrl,
+                className: 'cabinet-closure-event',
+            });
+        }
 
         calendar = new FullCalendar.Calendar(calendarEl, {
             initialView: currentView,
@@ -459,12 +571,19 @@
                 minute: '2-digit',
                 hour12: false
             },
-            events: '/calendar/feed/',
+            eventSources: eventSources,
             slotMinTime: '08:00:00',
             slotMaxTime: '22:00:00',
             slotDuration: '00:30:00',
             eventClick: function(info) {
                 info.jsEvent.preventDefault();
+                const eventType = info.event.extendedProps ? info.event.extendedProps.eventType : 'booking';
+                if (eventType === 'closure') {
+                    if (canManageClosures && info.event.extendedProps.canDelete) {
+                        promptClosureDelete(info.event);
+                    }
+                    return;
+                }
                 saveViewState();
                 openBookingEditModal(info.event.id);
             },
@@ -484,6 +603,12 @@
                 }
             },
             eventDidMount: function(info) {
+                const eventType = info.event.extendedProps ? info.event.extendedProps.eventType : 'booking';
+                if (eventType === 'closure') {
+                    info.el.classList.add('cabinet-closure-event');
+                    info.el.style.right = '';
+                    return;
+                }
                 const viewType = info.view ? info.view.type : calendar.view.type;
                 if (viewType === 'timeGridWeek' || viewType === 'timeGridDay') {
                     const currentRight = info.el.style.right;
@@ -978,6 +1103,210 @@
         if (instance) {
             instance.hide();
         }
+    }
+
+    function initCabinetClosureModals() {
+        if (!canManageClosures) {
+            return;
+        }
+        if (closureModalEl) {
+            cabinetClosureModal = new bootstrap.Modal(closureModalEl);
+            closureModalEl.addEventListener('hidden.bs.modal', () => {
+                if (closureFormEl) {
+                    closureFormEl.reset();
+                }
+                clearClosureErrors();
+            });
+        }
+        if (closureFormEl) {
+            closureFormEl.addEventListener('submit', handleCabinetClosureSubmit);
+        }
+        if (closureDeleteModalEl) {
+            closureDeleteModal = new bootstrap.Modal(closureDeleteModalEl);
+        }
+        if (confirmClosureDeleteBtn) {
+            confirmClosureDeleteBtn.addEventListener('click', handleClosureDelete);
+        }
+    }
+
+    function clearClosureErrors() {
+        const errorBlocks = document.querySelectorAll('[data-role^="closure-error-"]');
+        errorBlocks.forEach((block) => {
+            block.classList.add('d-none');
+            block.textContent = '';
+        });
+    }
+
+    function showClosureErrors(errors) {
+        clearClosureErrors();
+        if (!errors) return;
+
+        const nonFieldBlock = document.querySelector('[data-role="closure-error-non-field"]');
+        const errorMessages = [];
+        Object.entries(errors).forEach(([field, messages]) => {
+            const messageText = Array.isArray(messages) ? messages.join(' ') : messages;
+            if (field === '__all__' && nonFieldBlock) {
+                nonFieldBlock.textContent = messageText;
+                nonFieldBlock.classList.remove('d-none');
+            } else {
+                const block = document.querySelector(`[data-role="closure-error-${field}"]`);
+                if (block) {
+                    block.textContent = messageText;
+                    block.classList.remove('d-none');
+                } else {
+                    errorMessages.push(messageText);
+                }
+            }
+        });
+        if (nonFieldBlock && errorMessages.length) {
+            nonFieldBlock.textContent = errorMessages.join(' ');
+            nonFieldBlock.classList.remove('d-none');
+        }
+    }
+
+    function formatDateForInput(date) {
+        const pad = (value) => value.toString().padStart(2, '0');
+        const year = date.getFullYear();
+        const month = pad(date.getMonth() + 1);
+        const day = pad(date.getDate());
+        const hours = pad(date.getHours());
+        const minutes = pad(date.getMinutes());
+        return `${year}-${month}-${day}T${hours}:${minutes}`;
+    }
+
+    function openCabinetClosureModal(date) {
+        if (!canManageClosures || !cabinetClosureModal || !closureFormEl) {
+            return;
+        }
+        clearClosureErrors();
+        closureFormEl.reset();
+
+        const startInput = document.getElementById('id_start_time');
+        const endInput = document.getElementById('id_end_time');
+
+        const baseDate = date instanceof Date ? new Date(date) : new Date();
+        const startDate = new Date(baseDate);
+        startDate.setSeconds(0, 0);
+
+        const endDate = new Date(startDate);
+        endDate.setHours(endDate.getHours() + 1);
+
+        if (startInput) {
+            startInput.value = formatDateForInput(startDate);
+        }
+        if (endInput) {
+            endInput.value = formatDateForInput(endDate);
+        }
+
+        cabinetClosureModal.show();
+    }
+
+    function handleCabinetClosureSubmit(event) {
+        event.preventDefault();
+        if (!closureFormEl) return;
+
+        const submitButton = closureFormEl.querySelector('button[type="submit"]');
+        if (submitButton) {
+            submitButton.disabled = true;
+            submitButton.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Сохранение...';
+        }
+
+        const formData = new FormData(closureFormEl);
+        fetch(closureCreateUrl, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': csrftoken
+            },
+            body: formData
+        })
+            .then((response) => response.json().then((data) => ({ ok: response.ok, data })))
+            .then(({ ok, data }) => {
+                if (ok && data.success) {
+                    if (cabinetClosureModal) {
+                        cabinetClosureModal.hide();
+                    }
+                    showResultModal('Успех', data.message || 'Закрытие кабинета создано', true);
+                    if (calendar) {
+                        calendar.refetchEvents();
+                    }
+                } else {
+                    showClosureErrors(data.errors);
+                    const message = data.errors ? Object.values(data.errors).flat().join(' ') : (data.error || 'Не удалось создать закрытие');
+                    showResultModal('Ошибка', message, false);
+                }
+            })
+            .catch((error) => {
+                console.error('Error creating cabinet closure:', error);
+                showResultModal('Ошибка', 'Произошла ошибка при создании закрытия кабинета', false);
+            })
+            .finally(() => {
+                if (submitButton) {
+                    submitButton.disabled = false;
+                    submitButton.innerHTML = '<i class="bi bi-door-closed-fill"></i> Закрыть';
+                }
+            });
+    }
+
+    function promptClosureDelete(event) {
+        if (!canManageClosures || !closureDeleteModal || !event) {
+            return;
+        }
+        pendingClosureDeleteId = event.id;
+
+        if (closureDeleteCabinetNameEl) {
+            closureDeleteCabinetNameEl.textContent = event.extendedProps.cabinet || '';
+        }
+        if (closureDeletePeriodEl) {
+            const start = new Date(event.start);
+            const end = new Date(event.end);
+            const formatter = new Intl.DateTimeFormat('ru-RU', {
+                day: '2-digit',
+                month: 'long',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+            closureDeletePeriodEl.textContent = `${formatter.format(start)} — ${formatter.format(end)}`;
+        }
+
+        closureDeleteModal.show();
+    }
+
+    function handleClosureDelete() {
+        if (!pendingClosureDeleteId) {
+            return;
+        }
+        const deleteUrl = `${closureDeleteBaseUrl}${pendingClosureDeleteId}/delete/`;
+        confirmClosureDeleteBtn.disabled = true;
+        confirmClosureDeleteBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Удаление...';
+
+        fetch(deleteUrl, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': csrftoken
+            }
+        })
+            .then((response) => response.json().then((data) => ({ ok: response.ok, data })))
+            .then(({ ok, data }) => {
+                if (ok && data.success) {
+                    closureDeleteModal.hide();
+                    showResultModal('Успех', data.message || 'Закрытие кабинета удалено', true);
+                    if (calendar) {
+                        calendar.refetchEvents();
+                    }
+                } else {
+                    const message = data.error || 'Не удалось удалить закрытие кабинета';
+                    showResultModal('Ошибка', message, false);
+                }
+            })
+            .catch((error) => {
+                console.error('Error deleting cabinet closure:', error);
+                showResultModal('Ошибка', 'Произошла ошибка при удалении закрытия кабинета', false);
+            })
+            .finally(() => {
+                confirmClosureDeleteBtn.disabled = false;
+                confirmClosureDeleteBtn.innerHTML = '<i class="bi bi-trash"></i> Удалить';
+                pendingClosureDeleteId = null;
+            });
     }
 
     function handleEventDrop(info) {

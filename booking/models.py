@@ -464,3 +464,47 @@ class Booking(models.Model):
         total_duration = self.service_variant.duration_minutes + settings.buffer_time_minutes
         self.end_time = self.start_time + timedelta(minutes=total_duration)
         super().save(*args, **kwargs)
+
+
+class CabinetClosure(models.Model):
+    """Запланированное закрытие кабинета на период."""
+
+    cabinet = models.ForeignKey(
+        Cabinet,
+        on_delete=models.CASCADE,
+        related_name='closures',
+        verbose_name='Кабинет'
+    )
+    start_time = models.DateTimeField(verbose_name='Начало закрытия')
+    end_time = models.DateTimeField(verbose_name='Окончание закрытия')
+    reason = models.CharField(
+        max_length=255,
+        blank=True,
+        verbose_name='Причина'
+    )
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='cabinet_closures',
+        verbose_name='Создано пользователем'
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='Создано')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='Обновлено')
+
+    class Meta:
+        verbose_name = 'Закрытие кабинета'
+        verbose_name_plural = 'Закрытия кабинетов'
+        ordering = ['-start_time']
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(end_time__gt=models.F('start_time')),
+                name='cabinetclosure_end_after_start'
+            )
+        ]
+
+    def __str__(self):
+        start = timezone.localtime(self.start_time).strftime('%d.%m.%Y %H:%M')
+        end = timezone.localtime(self.end_time).strftime('%d.%m.%Y %H:%M')
+        return f"{self.cabinet.name}: {start} — {end}"

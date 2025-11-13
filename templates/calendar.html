@@ -4,6 +4,7 @@
 
 {% block extra_css %}
 <link href="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.0/main.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css" rel="stylesheet">
 <style>
     .calendar-page {
         max-width: 1200px;
@@ -465,6 +466,8 @@
 {% block extra_js %}
 <script src="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.0/main.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.0/locales/ru.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/l10n/ru.js"></script>
 <script>
     let calendar;
     let currentView = 'timeGridDay';
@@ -504,6 +507,8 @@
     let cabinetClosureModal;
     let closureDeleteModal;
     let pendingClosureDeleteId = null;
+    let closureStartPicker = null;
+    let closureEndPicker = null;
 
     // Получаем CSRF token
     function getCookie(name) {
@@ -1109,6 +1114,8 @@
         if (!canManageClosures) {
             return;
         }
+        const startInput = document.getElementById('id_start_time');
+        const endInput = document.getElementById('id_end_time');
         if (closureModalEl) {
             cabinetClosureModal = new bootstrap.Modal(closureModalEl);
             closureModalEl.addEventListener('hidden.bs.modal', () => {
@@ -1126,6 +1133,50 @@
         }
         if (confirmClosureDeleteBtn) {
             confirmClosureDeleteBtn.addEventListener('click', handleClosureDelete);
+        }
+        if (window.flatpickr) {
+            const localeConfig = window.flatpickr.l10ns && window.flatpickr.l10ns.ru ? window.flatpickr.l10ns.ru : 'ru';
+            const baseOptions = {
+                enableTime: true,
+                time_24hr: true,
+                dateFormat: 'Y-m-d\\TH:i',
+                altInput: true,
+                altFormat: 'd.m.Y, H:i',
+                allowInput: true,
+                minuteIncrement: 5,
+                locale: localeConfig
+            };
+            if (startInput) {
+                if (startInput._flatpickr) {
+                    startInput._flatpickr.destroy();
+                }
+                closureStartPicker = window.flatpickr(startInput, Object.assign({}, baseOptions, {
+                    onChange: function(selectedDates) {
+                        if (!closureEndPicker || !selectedDates.length) {
+                            return;
+                        }
+                        const startDate = selectedDates[0];
+                        closureEndPicker.set('minDate', startDate);
+                        const currentEnd = closureEndPicker.selectedDates[0];
+                        if (!currentEnd || currentEnd <= startDate) {
+                            const defaultEnd = new Date(startDate.getTime() + 60 * 60 * 1000);
+                            closureEndPicker.setDate(defaultEnd, false);
+                        }
+                    }
+                }));
+            }
+            if (endInput) {
+                if (endInput._flatpickr) {
+                    endInput._flatpickr.destroy();
+                }
+                closureEndPicker = window.flatpickr(endInput, Object.assign({}, baseOptions));
+            }
+            if (closureStartPicker && closureEndPicker) {
+                const selectedStart = closureStartPicker.selectedDates[0];
+                if (selectedStart) {
+                    closureEndPicker.set('minDate', selectedStart);
+                }
+            }
         }
     }
 
@@ -1191,10 +1242,17 @@
         const endDate = new Date(startDate);
         endDate.setHours(endDate.getHours() + 1);
 
-        if (startInput) {
+        if (closureStartPicker) {
+            closureStartPicker.setDate(startDate, false);
+            if (closureEndPicker) {
+                closureEndPicker.set('minDate', startDate);
+            }
+        } else if (startInput) {
             startInput.value = formatDateForInput(startDate);
         }
-        if (endInput) {
+        if (closureEndPicker) {
+            closureEndPicker.setDate(endDate, false);
+        } else if (endInput) {
             endInput.value = formatDateForInput(endDate);
         }
 

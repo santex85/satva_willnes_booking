@@ -43,6 +43,28 @@
         }
 
         let validationTimeout = null;
+        let startPicker = null;
+
+        if (window.flatpickr && startDatetimeInput) {
+            if (startDatetimeInput._flatpickr) {
+                startDatetimeInput._flatpickr.destroy();
+            }
+            const localeConfig = window.flatpickr.l10ns && window.flatpickr.l10ns.ru ? window.flatpickr.l10ns.ru : 'ru';
+            startPicker = window.flatpickr(startDatetimeInput, {
+                enableTime: true,
+                time_24hr: true,
+                dateFormat: 'Y-m-d\\TH:i',
+                altInput: true,
+                altFormat: 'd.m.Y, H:i',
+                allowInput: true,
+                minuteIncrement: 5,
+                locale: localeConfig,
+                onChange: function() {
+                    loadAvailableCabinets();
+                    scheduleValidation();
+                }
+            });
+        }
 
         function setCabinetHelp(message, type) {
             if (!cabinetHelpText) return;
@@ -257,6 +279,7 @@
             loadAvailableCabinets();
             scheduleValidation();
         });
+        startDatetimeInput.addEventListener('input', scheduleValidation);
 
         cabinetSelect.addEventListener('change', scheduleValidation);
 

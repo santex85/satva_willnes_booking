@@ -356,7 +356,14 @@ class SpecialistRegistrationForm(forms.Form):
 class BookingEditForm(forms.ModelForm):
     """Форма для редактирования бронирования"""
     start_datetime = forms.DateTimeField(
-        widget=forms.DateTimeInput(attrs={'type': 'datetime-local', 'class': 'form-control'}),
+        widget=forms.DateTimeInput(
+            format='%Y-%m-%dT%H:%M',
+            attrs={
+                'class': 'form-control',
+                'autocomplete': 'off',
+                'data-datetime-picker': 'booking-start'
+            }
+        ),
         label='Дата и время начала',
         input_formats=['%Y-%m-%dT%H:%M']
     )
@@ -592,8 +599,22 @@ class CabinetClosureForm(forms.ModelForm):
         fields = ['cabinet', 'start_time', 'end_time', 'reason']
         widgets = {
             'cabinet': forms.Select(attrs={'class': 'form-select'}),
-            'start_time': forms.DateTimeInput(attrs={'type': 'datetime-local', 'class': 'form-control'}),
-            'end_time': forms.DateTimeInput(attrs={'type': 'datetime-local', 'class': 'form-control'}),
+            'start_time': forms.DateTimeInput(
+                format='%Y-%m-%dT%H:%M',
+                attrs={
+                    'class': 'form-control',
+                    'autocomplete': 'off',
+                    'data-datetime-picker': 'closure-start'
+                }
+            ),
+            'end_time': forms.DateTimeInput(
+                format='%Y-%m-%dT%H:%M',
+                attrs={
+                    'class': 'form-control',
+                    'autocomplete': 'off',
+                    'data-datetime-picker': 'closure-end'
+                }
+            ),
             'reason': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Например: техобслуживание'}),
         }
         labels = {

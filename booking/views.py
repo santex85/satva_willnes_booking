@@ -296,6 +296,48 @@ def calendar_view(request):
     })
 
 
+@admin_required
+def specialists_overview_view(request):
+    """
+    Таблица графика работы всех специалистов на неделю.
+    """
+    week_days = SpecialistSchedule.DAYS_OF_WEEK
+
+    specialists = (
+        SpecialistProfile.objects
+        .select_related('user')
+        .prefetch_related('services_can_perform', 'schedules')
+        .order_by('full_name')
+    )
+
+    specialists_data = []
+    for specialist in specialists:
+        schedules_map = {day: None for day, _ in week_days}
+        for schedule in specialist.schedules.all():
+            schedules_map[schedule.day_of_week] = schedule
+
+        day_entries = []
+        for day_value, day_label in week_days:
+            day_entries.append({
+                'day_value': day_value,
+                'day_label': day_label,
+                'schedule': schedules_map.get(day_value),
+            })
+
+        specialists_data.append({
+            'specialist': specialist,
+            'services': list(specialist.services_can_perform.all()),
+            'day_entries': day_entries,
+        })
+
+    context = {
+        'week_days': week_days,
+        'specialists_data': specialists_data,
+    }
+
+    return render(request, 'specialists_overview.html', context)
+
+
 @specialist_required
 def my_schedule_view(request):
     """

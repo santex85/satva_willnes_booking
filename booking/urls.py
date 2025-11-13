@@ -16,6 +16,7 @@ urlpatterns = [
     path('', views.index_view, name='index'),
     path('register/specialist/', views.specialist_register_view, name='specialist_register'),
     path('calendar/', views.calendar_view, name='calendar'),
+    path('calendar/specialists/', views.specialists_overview_view, name='specialists_overview'),
     path('calendar/feed/', views.calendar_feed_view, name='calendar_feed'),
     path('calendar/closures/', views.cabinet_closure_feed_view, name='calendar_closure_feed'),
     path('calendar/closures/create/', views.create_cabinet_closure_view, name='create_cabinet_closure'),

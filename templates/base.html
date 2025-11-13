@@ -201,6 +201,11 @@
                                 <i class="bi bi-calendar-week"></i> Календарь
                             </a>
                         </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{% url 'specialists_overview' %}">
+                                <i class="bi bi-people"></i> График специалистов
+                            </a>
+                        </li>
                         {% else %}
                             {% comment %} Проверяем группы для обычных пользователей {% endcomment %}
                             {% for group in user.groups.all %}
@@ -208,6 +213,11 @@
                                 <li class="nav-item">
                                     <a class="nav-link" href="{% url 'calendar' %}">
                                         <i class="bi bi-calendar-week"></i> Календарь
+                                    </a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link" href="{% url 'specialists_overview' %}">
+                                        <i class="bi bi-people"></i> График специалистов
                                     </a>
                                 </li>
                                 {% endif %}

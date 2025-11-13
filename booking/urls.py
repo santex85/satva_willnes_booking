@@ -28,6 +28,7 @@ urlpatterns = [
     path('select-slot/', views.select_slot_view, name='select_slot'),
     path('create-booking/', views.create_booking_view, name='create_booking'),
     path('booking/quick-create/', views.quick_create_booking_view, name='quick_create_booking'),
+    path('booking/duplicate/', views.duplicate_booking_view, name='duplicate_booking'),
     path('booking/update-time/', views.update_booking_time_view, name='update_booking_time'),
     path('booking/<int:pk>/', views.booking_detail_view, name='booking_detail'),
     path('booking/<int:pk>/validate/', views.validate_booking_edit_view, name='validate_booking_edit'),

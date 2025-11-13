@@ -20,6 +20,11 @@ class SystemSettings(SingletonModel):
         help_text="Отправлять email-уведомления специалистам о новых бронированиях",
         verbose_name='Email уведомления'
     )
+    enable_booking_copy_shortcuts = models.BooleanField(
+        default=True,
+        help_text="Разрешить копирование/вставку бронирований с помощью горячих клавиш на календаре",
+        verbose_name='Горячие клавиши копирования брони'
+    )
 
     class Meta:
         verbose_name = 'Настройки системы'

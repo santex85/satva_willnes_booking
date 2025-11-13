@@ -473,6 +473,7 @@
     let currentView = 'timeGridDay';
     let currentResourceType = 'specialist';
     const canManageClosures = {{ can_manage_closures|yesno:"true,false" }};
+    const copyShortcutsEnabled = {{ copy_shortcuts_enabled|yesno:"true,false" }};
     const SUPPORTED_VIEWS = ['dayGridMonth', 'timeGridWeek', 'timeGridThreeDay', 'timeGridDay'];
     const WIDTH_MODE_STORAGE_KEY = 'calendarWidthMode';
     const VIEW_STORAGE_KEY = 'calendarView';
@@ -483,6 +484,7 @@
     const closureFeedUrl = "{% url 'calendar_closure_feed' %}";
     const closureCreateUrl = "{% url 'create_cabinet_closure' %}";
     const closureDeleteBaseUrl = "/calendar/closures/";
+    const duplicateBookingUrl = "{% url 'duplicate_booking' %}";
     const quickBookingFormEl = document.getElementById('quickBookingForm');
     const quickRecurrenceToggle = document.getElementById('quick_recurrence_enabled');
     const quickRecurrenceSettings = document.querySelector('[data-role="quick-recurrence-settings"]');
@@ -509,6 +511,13 @@
     let pendingClosureDeleteId = null;
     let closureStartPicker = null;
     let closureEndPicker = null;
+    let hoveredBookingEvent = null;
+    let copiedBookingBuffer = null;
+    let lastSlotSelection = null;
+    let copyPasteHandlerAttached = false;
+    let resultModalInstance = null;
+    let resultModalHideTimeout = null;
+    const isMacPlatform = typeof navigator !== 'undefined' && navigator.platform ? navigator.platform.toUpperCase().includes('MAC') : false;
 
     // Получаем CSRF token
     function getCookie(name) {
@@ -533,6 +542,9 @@
         restoreViewState();
         updateViewSwitcherButtons();
         initCalendar();
+        if (copyShortcutsEnabled) {
+            initCopyPasteShortcuts();
+        }
         updateWidthButton();
         initQuickBookingModal();
         initCabinetClosureModals();
@@ -595,17 +607,26 @@
             dateClick: function(info) {
                 // Обработка клика на свободный слот
                 const view = info.view.type;
-                
+                let targetDate = new Date(info.date);
+
                 if (view === 'dayGridMonth') {
-                    // В месячном виде открываем модальное окно с выбранной датой
-                    // Устанавливаем время на начало рабочего дня (например, 09:00)
-                    const selectedDate = new Date(info.date);
-                    selectedDate.setHours(9, 0, 0, 0); // Устанавливаем 09:00
-                    openQuickBookingModal(selectedDate, info.dateStr);
-                } else {
-                    // В временных видах (неделя, день) используем точное время клика
-                    openQuickBookingModal(info.date, info.dateStr);
+                    if (copyShortcutsEnabled && copiedBookingBuffer) {
+                        targetDate.setHours(copiedBookingBuffer.startHours, copiedBookingBuffer.startMinutes, 0, 0);
+                    } else {
+                        targetDate.setHours(9, 0, 0, 0);
+                    }
                 }
+
+                lastSlotSelection = new Date(targetDate);
+
+                if (copyShortcutsEnabled && copiedBookingBuffer) {
+                    info.jsEvent.preventDefault();
+                    duplicateCopiedBooking(targetDate);
+                    return;
+                }
+
+                // В месячном виде открываем модальное окно с выбранной датой
+                openQuickBookingModal(targetDate, info.dateStr);
             },
             eventDidMount: function(info) {
                 const eventType = info.event.extendedProps ? info.event.extendedProps.eventType : 'booking';
@@ -628,6 +649,8 @@
                 // Обработка перетаскивания события
                 handleEventDrop(info);
             },
+            eventMouseEnter: handleEventMouseEnter,
+            eventMouseLeave: handleEventMouseLeave,
             datesSet: function() {
                 saveViewState();
                 updateViewSwitcherButtons();
@@ -641,6 +664,175 @@
 
         calendar.render();
         setTimeout(() => calendar.updateSize(), 100);
+    }
+
+    function handleEventMouseEnter(info) {
+        if (!copyShortcutsEnabled) {
+            return;
+        }
+        if (!info || !info.event) {
+            return;
+        }
+        const eventType = info.event.extendedProps ? info.event.extendedProps.eventType : 'booking';
+        if (eventType !== 'booking') {
+            return;
+        }
+        hoveredBookingEvent = info.event;
+    }
+
+    function handleEventMouseLeave(info) {
+        if (!copyShortcutsEnabled) {
+            return;
+        }
+        if (!info || !info.event) {
+            return;
+        }
+        if (hoveredBookingEvent && hoveredBookingEvent.id === info.event.id) {
+            hoveredBookingEvent = null;
+        }
+    }
+
+    function initCopyPasteShortcuts() {
+        if (copyPasteHandlerAttached) {
+            return;
+        }
+        if (!copyShortcutsEnabled) {
+            return;
+        }
+        document.addEventListener('keydown', handleCopyPasteShortcut, true);
+        copyPasteHandlerAttached = true;
+    }
+
+    function handleCopyPasteShortcut(event) {
+        if (!copyShortcutsEnabled) {
+            return;
+        }
+        const activeElement = document.activeElement;
+        const isIgnoredElement = activeElement
+            && (activeElement.tagName === 'INPUT'
+                || activeElement.tagName === 'TEXTAREA'
+                || activeElement.isContentEditable);
+
+        if (isIgnoredElement) {
+            return;
+        }
+
+        const key = event.key ? event.key.toLowerCase() : '';
+        const hasModifier = event.metaKey || event.ctrlKey;
+
+        if (key === 'escape' && copiedBookingBuffer) {
+            clearCopyBuffer(true);
+            return;
+        }
+
+        if (!hasModifier) {
+            return;
+        }
+
+        if (!event.shiftKey && !event.altKey && key === 'c') {
+            if (!hoveredBookingEvent) {
+                return;
+            }
+            const eventType = hoveredBookingEvent.extendedProps ? hoveredBookingEvent.extendedProps.eventType : 'booking';
+            if (eventType !== 'booking') {
+                return;
+            }
+            const seriesId = hoveredBookingEvent.extendedProps ? hoveredBookingEvent.extendedProps.seriesId : null;
+            if (seriesId) {
+                showResultModal('Копирование невозможно', 'Нельзя копировать бронирования из серии', false);
+                event.preventDefault();
+                return;
+            }
+            const startDate = hoveredBookingEvent.start ? new Date(hoveredBookingEvent.start) : null;
+            copiedBookingBuffer = {
+                bookingId: hoveredBookingEvent.id,
+                title: hoveredBookingEvent.title || 'Бронирование',
+                startHours: startDate ? startDate.getHours() : 0,
+                startMinutes: startDate ? startDate.getMinutes() : 0,
+                copiedAt: Date.now()
+            };
+            showResultModal(
+                'Скопировано',
+                `Выберите слот и нажмите ${getPasteShortcutLabel()} для вставки`,
+                true
+            );
+            event.preventDefault();
+            return;
+        }
+
+        if (!event.shiftKey && !event.altKey && key === 'v') {
+            if (!copiedBookingBuffer) {
+                showResultModal('Копирование не выполнено', `Сначала наведите на бронирование и нажмите ${getCopyShortcutLabel()}`, false);
+                event.preventDefault();
+                return;
+            }
+            if (!lastSlotSelection) {
+                showResultModal('Нет выбранного слота', `Кликните по свободному времени и затем нажмите ${getPasteShortcutLabel()}`, false);
+                event.preventDefault();
+                return;
+            }
+            duplicateCopiedBooking(new Date(lastSlotSelection));
+            event.preventDefault();
+        }
+    }
+
+    function duplicateCopiedBooking(targetDate) {
+        if (!copyShortcutsEnabled) {
+            return;
+        }
+        if (!copiedBookingBuffer) {
+            return;
+        }
+        if (!(targetDate instanceof Date) || isNaN(targetDate.getTime())) {
+            showResultModal('Ошибка', 'Не удалось определить целевую дату для вставки', false);
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('booking_id', copiedBookingBuffer.bookingId);
+        formData.append('start_datetime', formatDateForInput(targetDate));
+
+        fetch(duplicateBookingUrl, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': csrftoken
+            },
+            body: formData
+        })
+            .then((response) => response.json().then((data) => ({ ok: response.ok, data })))
+            .then(({ ok, data }) => {
+                if (ok && data.success) {
+                    showResultModal('Готово', data.message || 'Бронирование скопировано', true);
+                    if (calendar) {
+                        calendar.refetchEvents();
+                    }
+                } else {
+                    const errorMessage = (data && (data.error || data.message)) || 'Не удалось скопировать бронирование';
+                    showResultModal('Ошибка', errorMessage, false);
+                }
+            })
+            .catch((error) => {
+                console.error('Error duplicating booking:', error);
+                showResultModal('Ошибка', 'Произошла ошибка при копировании бронирования', false);
+            });
+    }
+
+    function clearCopyBuffer(showMessage) {
+        if (!copyShortcutsEnabled) {
+            return;
+        }
+        copiedBookingBuffer = null;
+        if (showMessage) {
+            showResultModal('Буфер очищен', `Скопируйте бронирование клавишами ${getCopyShortcutLabel()}`, true);
+        }
+    }
+
+    function getCopyShortcutLabel() {
+        return isMacPlatform ? '⌘C' : 'Ctrl+C';
+    }
+
+    function getPasteShortcutLabel() {
+        return isMacPlatform ? '⌘V' : 'Ctrl+V';
     }
 
     function switchView(viewType) {
@@ -1452,15 +1644,47 @@
         }
     }
 
+    function cleanupModalBackdrops() {
+        const backdrops = document.querySelectorAll('.modal-backdrop');
+        backdrops.forEach((backdrop) => backdrop.remove());
+        document.body.classList.remove('modal-open');
+        document.body.style.removeProperty('padding-right');
+    }
+
     function showResultModal(title, message, isSuccess) {
-        const resultModal = new bootstrap.Modal(document.getElementById('resultModal'));
+        const modalElement = document.getElementById('resultModal');
+        if (!modalElement) {
+            console.warn('Result modal element not found');
+            return;
+        }
+
+        if (!resultModalInstance) {
+            resultModalInstance = new bootstrap.Modal(modalElement, {
+                backdrop: false,
+                keyboard: true
+            });
+
+            modalElement.addEventListener('hidden.bs.modal', () => {
+                cleanupModalBackdrops();
+            });
+        }
+
+        if (resultModalHideTimeout) {
+            clearTimeout(resultModalHideTimeout);
+            resultModalHideTimeout = null;
+        }
+
         document.getElementById('resultTitle').textContent = title;
         document.getElementById('resultHeader').className = isSuccess ? 'modal-header bg-success text-white' : 'modal-header bg-danger text-white';
         document.getElementById('resultBody').innerHTML = `<p>${message}</p>`;
-        resultModal.show();
 
-        setTimeout(() => {
-            bootstrap.Modal.getInstance(document.getElementById('resultModal')).hide();
+        cleanupModalBackdrops();
+        resultModalInstance.show();
+
+        resultModalHideTimeout = setTimeout(() => {
+            if (resultModalInstance) {
+                resultModalInstance.hide();
+            }
         }, 2000);
     }
 

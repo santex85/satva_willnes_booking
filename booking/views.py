@@ -24,6 +24,7 @@ from .models import (
     ScheduleTemplate,
     BookingSeries,
     CabinetClosure,
+    SystemSettings,
 )
 from .decorators import admin_required, specialist_required, staff_required
 from .utils import find_available_slots, check_booking_conflicts
@@ -282,12 +283,16 @@ def calendar_view(request):
         closure_form = CabinetClosureForm()
         closure_form.fields['cabinet'].queryset = Cabinet.objects.filter(is_active=True).order_by('name')
 
+    settings_obj = SystemSettings.get_solo()
+    copy_shortcuts_enabled = getattr(settings_obj, 'enable_booking_copy_shortcuts', True)
+
     return render(request, 'calendar.html', {
         'quick_form': quick_form,
         'service_groups': service_groups,
         'cabinets_with_colors': cabinets_with_colors,
         'closure_form': closure_form,
         'can_manage_closures': can_manage_closures,
+        'copy_shortcuts_enabled': copy_shortcuts_enabled,
     })
 
 
@@ -401,7 +406,8 @@ def calendar_feed_view(request):
                 'specialist': b.specialist.full_name,
                 'cabinet': b.cabinet.name,
                 'guest_name': b.guest_name,
-                'guest_room': b.guest_room_number
+                'guest_room': b.guest_room_number,
+                'seriesId': b.series_id or None
             },
             'backgroundColor': colors['bg'],
             'borderColor': colors['border'],
@@ -1224,6 +1230,101 @@ def quick_create_booking_view(request):
             return JsonResponse({'error': 'Неверные данные формы', 'errors': form.errors}, status=400)
     
     return JsonResponse({'error': 'Метод не поддерживается'}, status=405)
+
+
+@admin_required
+@require_POST
+def duplicate_booking_view(request):
+    """
+    Дублирование одиночного бронирования на новую дату и время.
+    """
+    booking_id = request.POST.get('booking_id')
+    start_datetime_str = request.POST.get('start_datetime')
+
+    if not booking_id or not start_datetime_str:
+        return JsonResponse({'success': False, 'error': 'Не переданы обязательные параметры'}, status=400)
+
+    try:
+        original_booking = Booking.objects.select_related(
+            'service_variant',
+            'specialist',
+            'cabinet'
+        ).get(pk=booking_id)
+    except Booking.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Бронирование не найдено'}, status=404)
+
+    if original_booking.series_id:
+        return JsonResponse({
+            'success': False,
+            'error': 'Нельзя копировать бронирования, входящие в серию'
+        }, status=400)
+
+    try:
+        if 'T' in start_datetime_str and len(start_datetime_str) == 16:
+            naive_dt = datetime.datetime.strptime(start_datetime_str, '%Y-%m-%dT%H:%M')
+            target_start = timezone.make_aware(naive_dt)
+        else:
+            iso_str = start_datetime_str.replace('Z', '+00:00')
+            target_start = timezone.datetime.fromisoformat(iso_str)
+            if timezone.is_naive(target_start):
+                target_start = timezone.make_aware(target_start)
+            target_start = timezone.localtime(target_start)
+            naive_local = timezone.localtime(target_start).replace(tzinfo=None)
+            target_start = timezone.make_aware(naive_local)
+    except ValueError:
+        return JsonResponse({'success': False, 'error': 'Неверный формат даты'}, status=400)
+
+    conflicts = check_booking_conflicts(
+        start_time=target_start,
+        service_variant=original_booking.service_variant,
+        specialist=original_booking.specialist,
+        cabinet=original_booking.cabinet
+    )
+
+    if conflicts:
+        conflict_messages = []
+        if conflicts.get('specialist_busy'):
+            conflict_messages.append('Специалист занят в это время')
+        if conflicts.get('cabinet_busy'):
+            conflict_messages.append('Кабинет занят в это время')
+        if conflicts.get('specialist_not_available'):
+            conflict_messages.append('Специалист не работает в это время')
+        if conflicts.get('cabinet_not_available'):
+            conflict_messages.append('Кабинет недоступен в это время')
+        message = conflict_messages[0] if conflict_messages else 'Выбранное время недоступно'
+        return JsonResponse({'success': False, 'error': message}, status=400)
+
+    try:
+        with transaction.atomic():
+            duplicated_booking = Booking.objects.create(
+                guest_name=original_booking.guest_name,
+                guest_room_number=original_booking.guest_room_number,
+                service_variant=original_booking.service_variant,
+                specialist=original_booking.specialist,
+                cabinet=original_booking.cabinet,
+                start_time=target_start,
+                created_by=request.user,
+                status=original_booking.status
+            )
+    except Exception as exc:
+        logger.error(
+            f"Unable to duplicate booking #{original_booking.id}: {exc}",
+            exc_info=True
+        )
+        return JsonResponse({'success': False, 'error': 'Не удалось создать копию бронирования'}, status=500)
+
+    logger.info(
+        "Booking duplicated: %s -> %s by %s",
+        original_booking.id,
+        duplicated_booking.id,
+        request.user.username
+    )
+
+    return JsonResponse({
+        'success': True,
+        'message': 'Бронирование скопировано',
+        'booking_id': duplicated_booking.id
+    })
 
 
 @admin_required

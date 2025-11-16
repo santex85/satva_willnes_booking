@@ -399,6 +399,7 @@ class BookingSeries(models.Model):
 class Booking(models.Model):
     """Бронирование"""
     STATUS_CHOICES = [
+        ('unconfirmed', 'Не подтверждено'),
         ('confirmed', 'Подтверждено'),
         ('paid', 'Оплачено'),
         ('completed', 'Выполнено'),

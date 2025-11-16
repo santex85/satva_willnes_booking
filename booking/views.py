@@ -425,6 +425,7 @@ def calendar_feed_view(request):
         
         # Формируем название с индикатором статуса, именем гостя, специалистом и услугой
         status_icons = {
+            'unconfirmed': '? ',
             'confirmed': '',
             'paid': '$ ',
             'completed': '✓ ',

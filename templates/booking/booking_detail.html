@@ -23,7 +23,9 @@
                         <p><strong><i class="bi bi-door-open"></i> Комната:</strong> {{ booking.guest_room_number }}</p>
                         {% endif %}
                         <p><strong><i class="bi bi-clipboard-check"></i> Статус:</strong>
-                            {% if booking.status == 'confirmed' %}
+                            {% if booking.status == 'unconfirmed' %}
+                                <span class="badge bg-warning text-dark">Не подтверждено</span>
+                            {% elif booking.status == 'confirmed' %}
                                 <span class="badge bg-success">Подтверждено</span>
                             {% elif booking.status == 'paid' %}
                                 <span class="badge bg-primary">Оплачено</span>

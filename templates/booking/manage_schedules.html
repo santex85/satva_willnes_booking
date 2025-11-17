@@ -2,6 +2,7 @@
 
 {% block title %}Управление графиками{% endblock %}
 
+{% load static %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3 mb-md-4">
     <h1 class="h3"><i class="bi bi-calendar-check"></i> <span class="d-none d-sm-inline">Управление графиками работы</span><span class="d-sm-none">Графики</span></h1>
@@ -32,7 +33,9 @@
 
 {% if selected_specialist %}
 <!-- Действия с расписанием -->
-<div class="card mb-3">
+<div class="card mb-3" data-specialist-id="{{ selected_specialist.id }}" 
+     data-copy-schedule-url="{% url 'copy_schedule' %}"
+     data-apply-template-url="{% url 'apply_template' %}">
     <div class="card-body">
         <div class="row g-2">
             <div class="col-12 col-md-4">
@@ -232,174 +235,8 @@
     </div>
 </div>
 
-<script>
-function toggleAllDays(checkbox) {
-    const checkboxes = document.querySelectorAll('.day-checkbox');
-    checkboxes.forEach(cb => cb.checked = checkbox.checked);
-}
-
-function selectAllDays() {
-    const checkboxes = document.querySelectorAll('.day-checkbox');
-    checkboxes.forEach(cb => cb.checked = true);
-    document.getElementById('selectAll').checked = true;
-}
-
-function getSelectedDays() {
-    const checkboxes = document.querySelectorAll('.day-checkbox:checked');
-    return Array.from(checkboxes).map(cb => parseInt(cb.value));
-}
-
-function applyTimeToSelected() {
-    const selectedDays = getSelectedDays();
-    if (selectedDays.length === 0) {
-        alert('Выберите хотя бы один день');
-        return;
-    }
-    const modal = new bootstrap.Modal(document.getElementById('applyTimeModal'));
-    modal.show();
-}
-
-function confirmApplyTime() {
-    const startTime = document.getElementById('bulkStartTime').value;
-    const endTime = document.getElementById('bulkEndTime').value;
-    
-    if (!startTime || !endTime) {
-        alert('Укажите время начала и окончания');
-        return;
-    }
-    
-    if (startTime >= endTime) {
-        alert('Время начала должно быть меньше времени окончания');
-        return;
-    }
-    
-    const selectedDays = getSelectedDays();
-    selectedDays.forEach(dayIndex => {
-        const row = document.querySelector(`tr[data-day-index="${dayIndex}"]`);
-        if (row) {
-            const startInput = row.querySelector('input[name$="-start_time"]');
-            const endInput = row.querySelector('input[name$="-end_time"]');
-            if (startInput) startInput.value = startTime;
-            if (endInput) endInput.value = endTime;
-        }
-    });
-    
-    bootstrap.Modal.getInstance(document.getElementById('applyTimeModal')).hide();
-    alert(`Время применено к ${selectedDays.length} дням`);
-}
-
-function clearSelectedDays() {
-    const selectedDays = getSelectedDays();
-    if (selectedDays.length === 0) {
-        alert('Нет выбранных дней');
-        return;
-    }
-    
-    if (!confirm(`Очистить расписание для ${selectedDays.length} выбранных дней?`)) {
-        return;
-    }
-    
-    selectedDays.forEach(dayIndex => {
-        const row = document.querySelector(`tr[data-day-index="${dayIndex}"]`);
-        if (row) {
-            const deleteCheckbox = row.querySelector('input[name$="-DELETE"]');
-            if (deleteCheckbox) {
-                deleteCheckbox.checked = true;
-            }
-            const startInput = row.querySelector('input[name$="-start_time"]');
-            const endInput = row.querySelector('input[name$="-end_time"]');
-            if (startInput) startInput.value = '';
-            if (endInput) endInput.value = '';
-        }
-    });
-    
-    alert(`Расписание очищено для ${selectedDays.length} дней`);
-}
-
-function copySchedule() {
-    const sourceId = document.getElementById('sourceSpecialistSelect').value;
-    const targetId = {{ selected_specialist.id }};
-    
-    if (!sourceId) {
-        alert('Выберите специалиста для копирования');
-        return;
-    }
-    
-    if (sourceId == targetId) {
-        alert('Нельзя копировать расписание к самому себе');
-        return;
-    }
-    
-    const formData = new FormData();
-    formData.append('source_specialist_id', sourceId);
-    formData.append('target_specialist_id', targetId);
-    formData.append('csrfmiddlewaretoken', document.querySelector('[name=csrfmiddlewaretoken]').value);
-    
-    fetch('{% url "copy_schedule" %}', {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            alert(data.message);
-            bootstrap.Modal.getInstance(document.getElementById('copyScheduleModal')).hide();
-            location.reload();
-        } else {
-            alert('Ошибка: ' + (data.error || 'Неизвестная ошибка'));
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        alert('Ошибка при копировании расписания');
-    });
-}
-
-function applyTemplate() {
-    const templateId = document.getElementById('templateSelect').value;
-    const specialistId = {{ selected_specialist.id }};
-    
-    if (!templateId) {
-        alert('Выберите шаблон');
-        return;
-    }
-    
-    if (!confirm('Применить шаблон? Существующее расписание для дней из шаблона будет обновлено.')) {
-        return;
-    }
-    
-    const formData = new FormData();
-    formData.append('template_id', templateId);
-    formData.append('specialist_id', specialistId);
-    formData.append('csrfmiddlewaretoken', document.querySelector('[name=csrfmiddlewaretoken]').value);
-    
-    fetch('{% url "apply_template" %}', {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            alert(data.message);
-            bootstrap.Modal.getInstance(document.getElementById('applyTemplateModal')).hide();
-            location.reload();
-        } else {
-            alert('Ошибка: ' + (data.error || 'Неизвестная ошибка'));
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        alert('Ошибка при применении шаблона');
-    });
-}
-</script>
-{% else %}
-<div class="card">
-    <div class="card-body text-center">
-        <i class="bi bi-info-circle" style="font-size: 3rem; color: #0d6efd;"></i>
-        <p class="mt-3 mb-0">Выберите специалиста для управления графиком работы</p>
-    </div>
-</div>
+{% load static %}
+<script src="{% static 'js/manage_schedules.js' %}"></script>
 {% endif %}
 {% endblock %}
 

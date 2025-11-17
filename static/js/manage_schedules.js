@@ -102,8 +102,7 @@ function copySchedule() {
         return;
     }
     
-    const containerEl = document.querySelector('[data-copy-schedule-url]');
-    const copyUrl = containerEl ? containerEl.dataset.copyScheduleUrl : null;
+    const copyUrl = container ? container.dataset.copyScheduleUrl : null;
     if (!copyUrl) {
         alert('Ошибка: URL для копирования не найден');
         return;
@@ -151,8 +150,7 @@ function applyTemplate() {
         return;
     }
     
-    const containerEl = document.querySelector('[data-apply-template-url]');
-    const applyUrl = containerEl ? containerEl.dataset.applyTemplateUrl : null;
+    const applyUrl = container ? container.dataset.applyTemplateUrl : null;
     if (!applyUrl) {
         alert('Ошибка: URL для применения шаблона не найден');
         return;

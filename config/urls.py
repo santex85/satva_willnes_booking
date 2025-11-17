@@ -16,9 +16,17 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
+from django.conf import settings
+from django.conf.urls.static import static
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('accounts/', include('django.contrib.auth.urls')),
     path('', include('booking.urls')),
 ]
+
+# Обслуживание статических файлов в режиме разработки
+if settings.DEBUG:
+    # Обслуживание статических файлов из STATICFILES_DIRS
+    for static_dir in settings.STATICFILES_DIRS:
+        urlpatterns += static(settings.STATIC_URL, document_root=static_dir)

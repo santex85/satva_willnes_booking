@@ -514,3 +514,100 @@ class CabinetClosure(models.Model):
         start = timezone.localtime(self.start_time).strftime('%d.%m.%Y %H:%M')
         end = timezone.localtime(self.end_time).strftime('%d.%m.%Y %H:%M')
         return f"{self.cabinet.name}: {start} — {end}"
+
+
+class DeletedBooking(models.Model):
+    """Архив удаленных бронирований для возможности восстановления."""
+    
+    original_id = models.IntegerField(
+        null=True,
+        blank=True,
+        verbose_name='ID оригинального бронирования',
+        help_text='ID бронирования до удаления'
+    )
+    booking_data = models.JSONField(
+        verbose_name='Данные бронирования',
+        help_text='Полные данные удаленного бронирования в формате JSON'
+    )
+    series_id = models.IntegerField(
+        null=True,
+        blank=True,
+        verbose_name='ID серии',
+        help_text='ID серии, если бронирование входило в серию'
+    )
+    series_data = models.JSONField(
+        null=True,
+        blank=True,
+        verbose_name='Данные серии',
+        help_text='Данные серии, если бронирование входило в серию'
+    )
+    deleted_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='deleted_bookings',
+        verbose_name='Удалено пользователем'
+    )
+    deleted_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name='Дата удаления'
+    )
+    deletion_reason = models.CharField(
+        max_length=500,
+        blank=True,
+        verbose_name='Причина удаления',
+        help_text='Опциональная причина удаления'
+    )
+    deletion_scope = models.CharField(
+        max_length=20,
+        choices=[
+            ('single', 'Одиночное бронирование'),
+            ('series', 'Серия бронирований'),
+        ],
+        default='single',
+        verbose_name='Область удаления'
+    )
+    restored = models.BooleanField(
+        default=False,
+        verbose_name='Восстановлено',
+        help_text='Было ли бронирование восстановлено'
+    )
+    restored_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name='Дата восстановления'
+    )
+    restored_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='restored_bookings',
+        verbose_name='Восстановлено пользователем'
+    )
+
+    class Meta:
+        verbose_name = 'Удаленное бронирование'
+        verbose_name_plural = 'Удаленные бронирования'
+        ordering = ['-deleted_at']
+        indexes = [
+            models.Index(fields=['original_id']),
+            models.Index(fields=['deleted_at']),
+            models.Index(fields=['restored']),
+            models.Index(fields=['series_id']),
+        ]
+
+    def __str__(self):
+        booking_data = self.booking_data or {}
+        guest_name = booking_data.get('guest_name', 'Неизвестно')
+        start_time = booking_data.get('start_time', '')
+        if start_time:
+            try:
+                from datetime import datetime
+                if isinstance(start_time, str):
+                    dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+                    start_time = timezone.localtime(dt).strftime('%d.%m.%Y %H:%M')
+            except:
+                pass
+        return f"{guest_name} - {start_time} (удалено {timezone.localtime(self.deleted_at).strftime('%d.%m.%Y %H:%M')})"

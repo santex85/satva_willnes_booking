@@ -6,7 +6,7 @@ from django.views.generic import DeleteView
 from django.urls import reverse, reverse_lazy
 from django.utils.decorators import method_decorator
 from django.forms import modelformset_factory
-from django.db import transaction
+from django.db import transaction, models
 from django.db.models import Count, Sum
 from django.utils import timezone
 from django.contrib import messages
@@ -25,9 +25,12 @@ from .models import (
     BookingSeries,
     CabinetClosure,
     SystemSettings,
+    DeletedBooking,
 )
 from .decorators import admin_required, specialist_required, staff_required
 from .utils import find_available_slots, check_booking_conflicts
+from .restore_utils import restore_booking, restore_series, check_restore_conflicts
+from .signals import set_current_user, clear_thread_locals
 from .forms import (
     QuickBookingForm,
     SelectServiceForm,
@@ -1501,32 +1504,46 @@ class BookingDeleteView(DeleteView):
     def delete(self, request, *args, **kwargs):
         self.object = self.get_object()
         scope = request.POST.get('scope', 'single')
+        deletion_reason = request.POST.get('deletion_reason', '')
         booking = self.object
         series = booking.series
         success_url = self.get_success_url()
 
-        if scope == 'series' and series:
+        # Устанавливаем пользователя и причину удаления для сигнала
+        set_current_user(
+            user=request.user,
+            deletion_reason=deletion_reason,
+            deletion_scope=scope
+        )
+
+        try:
+            if scope == 'series' and series:
+                with transaction.atomic():
+                    count = series.bookings.count()
+                    # Удаляем все бронирования серии (сигнал сработает для каждого)
+                    series.bookings.all().delete()
+                    series.delete()
+                messages.success(request, f'Удалена серия из {count} бронирований')
+                return redirect(success_url)
+
             with transaction.atomic():
-                count = series.bookings.count()
-                series.bookings.all().delete()
-                series.delete()
-            messages.success(request, f'Удалена серия из {count} бронирований')
-            return redirect(success_url)
+                series_to_update = booking.series
+                # Удаляем бронирование (сигнал pre_delete сработает автоматически)
+                booking.delete()
+                messages.success(request, 'Бронирование удалено')
 
-        with transaction.atomic():
-            series_to_update = booking.series
-            booking.delete()
-            messages.success(request, 'Бронирование удалено')
-
-            if series_to_update:
-                remaining = series_to_update.bookings.order_by('start_time')
-                if not remaining.exists():
-                    series_to_update.delete()
-                else:
-                    for index, item in enumerate(remaining, start=1):
-                        if item.sequence != index:
-                            item.sequence = index
-                            item.save(update_fields=['sequence'])
+                if series_to_update:
+                    remaining = series_to_update.bookings.order_by('start_time')
+                    if not remaining.exists():
+                        series_to_update.delete()
+                    else:
+                        for index, item in enumerate(remaining, start=1):
+                            if item.sequence != index:
+                                item.sequence = index
+                                item.save(update_fields=['sequence'])
+        finally:
+            # Очищаем thread-local storage
+            clear_thread_locals()
 
         return redirect(success_url)
 
@@ -1806,3 +1823,161 @@ def build_service_variant_groups(service_variants, cabinets):
     )
 
     return [entry for _, entry in sorted_entries]
+
+
+# Deleted bookings views
+def format_iso_datetime_str(iso_str):
+    """Вспомогательная функция для форматирования ISO datetime строки"""
+    if not iso_str:
+        return "—"
+    try:
+        from datetime import datetime
+        if isinstance(iso_str, str) and 'T' in iso_str:
+            dt = datetime.fromisoformat(iso_str.replace('Z', '+00:00'))
+            if timezone.is_naive(dt):
+                dt = timezone.make_aware(dt)
+            local_dt = timezone.localtime(dt)
+            return local_dt.strftime('%d.%m.%Y %H:%M')
+        return str(iso_str)
+    except (ValueError, AttributeError, TypeError):
+        return str(iso_str)
+
+
+@admin_required
+def deleted_bookings_view(request):
+    """
+    Список удаленных бронирований.
+    """
+    deleted_bookings = DeletedBooking.objects.all().select_related('deleted_by', 'restored_by')
+    
+    # Фильтры
+    restored_filter = request.GET.get('restored', '')
+    if restored_filter == 'yes':
+        deleted_bookings = deleted_bookings.filter(restored=True)
+    elif restored_filter == 'no':
+        deleted_bookings = deleted_bookings.filter(restored=False)
+    
+    scope_filter = request.GET.get('scope', '')
+    if scope_filter in ['single', 'series']:
+        deleted_bookings = deleted_bookings.filter(deletion_scope=scope_filter)
+    
+    # Поиск
+    search_query = request.GET.get('search', '')
+    if search_query:
+        deleted_bookings = deleted_bookings.filter(
+            models.Q(booking_data__guest_name__icontains=search_query) |
+            models.Q(booking_data__specialist_name__icontains=search_query) |
+            models.Q(booking_data__cabinet_name__icontains=search_query)
+        )
+    
+    # Пагинация
+    from django.core.paginator import Paginator
+    paginator = Paginator(deleted_bookings, 50)
+    page_number = request.GET.get('page', 1)
+    page_obj = paginator.get_page(page_number)
+    
+    # Форматируем даты для каждого бронирования на текущей странице
+    for deleted in page_obj:
+        if deleted.booking_data and deleted.booking_data.get('start_time'):
+            deleted.booking_data['start_time_formatted'] = format_iso_datetime_str(
+                deleted.booking_data['start_time']
+            )
+    
+    return render(request, 'booking/deleted_bookings_list.html', {
+        'page_obj': page_obj,
+        'restored_filter': restored_filter,
+        'scope_filter': scope_filter,
+        'search_query': search_query,
+    })
+
+
+@admin_required
+def deleted_booking_detail_view(request, pk):
+    """
+    Детали удаленного бронирования.
+    """
+    deleted_booking = get_object_or_404(DeletedBooking, pk=pk)
+    
+    # Форматируем даты
+    if deleted_booking.booking_data:
+        if deleted_booking.booking_data.get('start_time'):
+            deleted_booking.booking_data['start_time_formatted'] = format_iso_datetime_str(
+                deleted_booking.booking_data['start_time']
+            )
+        if deleted_booking.booking_data.get('end_time'):
+            from datetime import datetime
+            end_time_str = deleted_booking.booking_data['end_time']
+            try:
+                if isinstance(end_time_str, str) and 'T' in end_time_str:
+                    dt = datetime.fromisoformat(end_time_str.replace('Z', '+00:00'))
+                    if timezone.is_naive(dt):
+                        dt = timezone.make_aware(dt)
+                    local_dt = timezone.localtime(dt)
+                    deleted_booking.booking_data['end_time_formatted'] = local_dt.strftime('%H:%M')
+                else:
+                    deleted_booking.booking_data['end_time_formatted'] = str(end_time_str)
+            except (ValueError, AttributeError, TypeError):
+                deleted_booking.booking_data['end_time_formatted'] = str(end_time_str)
+    
+    # Проверяем конфликты для восстановления
+    conflicts = None
+    if not deleted_booking.restored:
+        conflicts = check_restore_conflicts(
+            deleted_booking.booking_data,
+            deleted_booking.series_data
+        )
+    
+    return render(request, 'booking/deleted_booking_detail.html', {
+        'deleted_booking': deleted_booking,
+        'conflicts': conflicts,
+    })
+
+
+@admin_required
+@require_POST
+def restore_booking_view(request, pk):
+    """
+    Восстановление удаленного бронирования.
+    """
+    deleted_booking = get_object_or_404(DeletedBooking, pk=pk)
+    
+    if deleted_booking.restored:
+        messages.error(request, 'Бронирование уже было восстановлено ранее')
+        return redirect('deleted_bookings')
+    
+    scope = request.POST.get('scope', 'single')
+    
+    if scope == 'series' and deleted_booking.series_id:
+        success, bookings, message = restore_series(deleted_booking.id, request.user)
+    else:
+        success, booking, message = restore_booking(deleted_booking.id, request.user)
+        bookings = [booking] if booking else []
+    
+    if success:
+        count = len(bookings)
+        messages.success(request, f'{message}. Восстановлено бронирований: {count}')
+        return redirect('calendar')
+    else:
+        messages.error(request, f'Не удалось восстановить: {message}')
+        return redirect('deleted_booking_detail', pk=pk)
+
+
+@admin_required
+@require_POST
+def permanently_delete_view(request, pk):
+    """
+    Окончательное удаление из архива.
+    """
+    deleted_booking = get_object_or_404(DeletedBooking, pk=pk)
+    
+    if deleted_booking.restored:
+        messages.error(request, 'Нельзя удалить восстановленное бронирование')
+        return redirect('deleted_booking_detail', pk=pk)
+    
+    booking_data = deleted_booking.booking_data or {}
+    guest_name = booking_data.get('guest_name', 'Неизвестно')
+    
+    deleted_booking.delete()
+    messages.success(request, f'Бронирование "{guest_name}" окончательно удалено из архива')
+    
+    return redirect('deleted_bookings')

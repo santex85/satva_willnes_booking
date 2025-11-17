@@ -40,6 +40,12 @@ urlpatterns = [
     path('reports/', views.reports_view, name='reports'),
     path('my-schedule/', views.my_schedule_view, name='my_schedule'),
     
+    # Deleted bookings
+    path('deleted-bookings/', views.deleted_bookings_view, name='deleted_bookings'),
+    path('deleted-bookings/<int:pk>/', views.deleted_booking_detail_view, name='deleted_booking_detail'),
+    path('deleted-bookings/<int:pk>/restore/', views.restore_booking_view, name='restore_booking'),
+    path('deleted-bookings/<int:pk>/delete/', views.permanently_delete_view, name='permanently_delete'),
+    
     # API endpoints
     path('api/v1/my-schedule/', api_views.MyScheduleAPI.as_view(), name='api_my_schedule'),
     path('api/v1/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),

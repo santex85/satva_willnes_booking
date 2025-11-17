@@ -15,6 +15,7 @@ from .models import (
     ScheduleTemplate,
     ScheduleTemplateDay,
     CabinetClosure,
+    DeletedBooking,
 )
 
 
@@ -193,6 +194,52 @@ class ScheduleTemplateAdmin(admin.ModelAdmin):
             messages.error(request, f'Ошибка при создании шаблона: {e}')
     
     create_template_from_specialist.short_description = 'Создать шаблон из расписания специалиста'
+
+
+@admin.register(DeletedBooking)
+class DeletedBookingAdmin(admin.ModelAdmin):
+    """Admin для удаленных бронирований"""
+    list_display = ('get_guest_name', 'get_service', 'get_specialist', 'get_deleted_at', 'restored', 'deletion_scope')
+    list_filter = ('restored', 'deletion_scope', 'deleted_at')
+    search_fields = ('booking_data__guest_name', 'booking_data__specialist_name', 'booking_data__cabinet_name')
+    readonly_fields = ('original_id', 'booking_data', 'series_id', 'series_data', 'deleted_at', 'restored_at')
+    date_hierarchy = 'deleted_at'
+    ordering = ('-deleted_at',)
+    
+    fieldsets = (
+        ('Данные бронирования', {
+            'fields': ('original_id', 'booking_data', 'series_id', 'series_data')
+        }),
+        ('Информация об удалении', {
+            'fields': ('deleted_by', 'deleted_at', 'deletion_reason', 'deletion_scope')
+        }),
+        ('Информация о восстановлении', {
+            'fields': ('restored', 'restored_at', 'restored_by'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def get_guest_name(self, obj):
+        """Имя гостя из JSON данных"""
+        return obj.booking_data.get('guest_name', '—') if obj.booking_data else '—'
+    get_guest_name.short_description = 'Гость'
+    
+    def get_service(self, obj):
+        """Услуга из JSON данных"""
+        return obj.booking_data.get('service_variant_name', '—') if obj.booking_data else '—'
+    get_service.short_description = 'Услуга'
+    
+    def get_specialist(self, obj):
+        """Специалист из JSON данных"""
+        return obj.booking_data.get('specialist_name', '—') if obj.booking_data else '—'
+    get_specialist.short_description = 'Специалист'
+    
+    def get_deleted_at(self, obj):
+        """Дата удаления"""
+        from django.utils import timezone
+        return timezone.localtime(obj.deleted_at).strftime('%d.%m.%Y %H:%M')
+    get_deleted_at.short_description = 'Удалено'
+    get_deleted_at.admin_order_field = 'deleted_at'
 
 
 admin.site.register(SystemSettings, SingletonModelAdmin)

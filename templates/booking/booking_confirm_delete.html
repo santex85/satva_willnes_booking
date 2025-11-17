@@ -43,6 +43,11 @@
                         </div>
                     </div>
                     {% endif %}
+                    <div class="mb-3">
+                        <label for="deletion_reason" class="form-label">Причина удаления (опционально)</label>
+                        <textarea class="form-control" id="deletion_reason" name="deletion_reason" rows="2" maxlength="500" placeholder="Укажите причину удаления, если необходимо"></textarea>
+                        <small class="form-text text-muted">Эта информация будет сохранена в архиве удаленных бронирований</small>
+                    </div>
                     <div class="d-grid gap-2 d-md-flex justify-content-md-end">
                         <a href="{% url 'booking_detail' booking.pk %}" class="btn btn-secondary">
                             <i class="bi bi-arrow-left"></i> Назад

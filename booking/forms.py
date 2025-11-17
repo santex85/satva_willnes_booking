@@ -4,6 +4,7 @@
 from django import forms
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
+from django_cf_turnstile.fields import TurnstileCaptchaField
 from .models import (
     ServiceVariant,
     SpecialistProfile,
@@ -336,6 +337,9 @@ class SpecialistRegistrationForm(forms.Form):
         label='Полное имя',
         widget=forms.TextInput(attrs={'class': 'form-control'}),
         help_text='Ваше полное имя для отображения в системе'
+    )
+    captcha = TurnstileCaptchaField(
+        label='Проверка безопасности'
     )
     
     def clean_username(self):

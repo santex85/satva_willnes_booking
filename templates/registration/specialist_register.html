@@ -83,6 +83,17 @@
                         {% endif %}
                     </div>
 
+                    <div class="mb-3">
+                        {{ form.captcha.label_tag }}
+                        {{ form.captcha }}
+                        {% if form.captcha.errors %}
+                            <div class="text-danger small">{{ form.captcha.errors }}</div>
+                        {% endif %}
+                        {% if form.captcha.help_text %}
+                            <div class="form-text">{{ form.captcha.help_text }}</div>
+                        {% endif %}
+                    </div>
+
                     <div class="d-grid gap-2">
                         <button type="submit" class="btn btn-primary btn-lg">
                             <i class="bi bi-check-circle"></i> Зарегистрироваться

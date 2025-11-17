@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     'rest_framework.authtoken',
     'booking',
     'solo',
+    'django_cf_turnstile',
 ]
 
 MIDDLEWARE = [
@@ -212,3 +213,9 @@ SIMPLE_JWT = {
 }
 
 TIME_ZONE = 'Asia/Bangkok'
+
+# Cloudflare Turnstile settings
+# Используем тестовые ключи, если реальные не установлены
+# Тестовые ключи: https://developers.cloudflare.com/turnstile/troubleshooting/testing/
+CF_TURNSTILE_SITE_KEY = os.environ.get('CF_TURNSTILE_SITE_KEY') or '1x00000000000000000000AA'
+CF_TURNSTILE_SECRET_KEY = os.environ.get('CF_TURNSTILE_SECRET_KEY') or '1x0000000000000000000000000000000AA'

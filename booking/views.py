@@ -185,6 +185,8 @@ def handle_series_booking_update(booking, updated_booking, recurrence_payload, u
         cabinet=updated_booking.cabinet,
         exclude_ids=exclude_ids
     )
+    # Сохраняем информацию о конфликтах для предупреждения, но не блокируем
+    conflict_warning = None
     if conflicts:
         messages_list = []
         for index, start_dt, conflict_data in conflicts[:3]:
@@ -195,7 +197,7 @@ def handle_series_booking_update(booking, updated_booking, recurrence_payload, u
             )
         if len(conflicts) > 3:
             messages_list.append('и другие конфликты…')
-        raise RecurrenceError('Конфликты при обновлении серии: ' + '; '.join(messages_list))
+        conflict_warning = 'Конфликты при обновлении серии: ' + '; '.join(messages_list)
 
     with transaction.atomic():
         series.created_by = series.created_by or user
@@ -228,9 +230,13 @@ def handle_series_booking_update(booking, updated_booking, recurrence_payload, u
                 sequence=sequence
             )
 
-    if existing_series:
-        return f'Обновлено бронирование и серия ({len(occurrences)} записей)'
-    return f'Создана серия бронирований ({len(occurrences)} записей)'
+    result_message = f'Обновлено бронирование и серия ({len(occurrences)} записей)' if existing_series else f'Создана серия бронирований ({len(occurrences)} записей)'
+    
+    # Добавляем предупреждение о конфликтах если есть
+    if conflict_warning:
+        result_message += f'. Внимание: {conflict_warning}'
+    
+    return result_message
 
 
 @login_required
@@ -918,6 +924,9 @@ def booking_detail_view(request, pk):
 
     if request.method == 'POST':
         if form.is_valid():
+            # Проверяем наличие предупреждений о конфликтах
+            conflicts_warning = form.cleaned_data.get('conflicts_warning')
+            
             updated_booking = form.save(commit=False)
             recurrence_payload = form.cleaned_data.get('recurrence_payload')
             recurrence_enabled = form.cleaned_data.get('recurrence_enabled')
@@ -943,9 +952,21 @@ def booking_detail_view(request, pk):
                     )
 
                 logger.info(f"Booking {booking.id} updated by {request.user.username} scope={apply_scope}")
-                if ajax_request:
-                    return JsonResponse({'success': True, 'message': message_text})
-                messages.success(request, message_text)
+                
+                # Показываем предупреждение если есть конфликты
+                if conflicts_warning:
+                    if ajax_request:
+                        return JsonResponse({
+                            'success': True, 
+                            'message': message_text,
+                            'warning': conflicts_warning
+                        })
+                    messages.warning(request, f'{message_text}. Внимание: {conflicts_warning}')
+                else:
+                    if ajax_request:
+                        return JsonResponse({'success': True, 'message': message_text})
+                    messages.success(request, message_text)
+                
                 return redirect('calendar')
 
             except RecurrenceError as recur_error:
@@ -1020,7 +1041,7 @@ def validate_booking_edit_view(request, pk):
         specialist = get_object_or_404(SpecialistProfile, id=specialist_id)
         cabinet = get_object_or_404(Cabinet, id=cabinet_id)
         
-        # Проверяем конфликты
+        # Проверяем конфликты (только для предупреждения, не блокируем)
         conflicts = check_booking_conflicts(
             start_time=start_time,
             service_variant=service_variant,
@@ -1029,6 +1050,8 @@ def validate_booking_edit_view(request, pk):
             exclude_booking_id=booking.id
         )
         
+        # Формируем предупреждение если есть конфликты, но не блокируем
+        warning = None
         if conflicts:
             conflict_messages = []
             if conflicts.get('specialist_busy'):
@@ -1040,11 +1063,7 @@ def validate_booking_edit_view(request, pk):
             if conflicts.get('cabinet_not_available'):
                 conflict_messages.append('Кабинет недоступен в это время')
             
-            return JsonResponse({
-                'valid': False,
-                'error': '; '.join(conflict_messages) if conflict_messages else 'Выбранное время недоступно',
-                'conflicts': conflicts
-            })
+            warning = '; '.join(conflict_messages) if conflict_messages else 'Выбранное время имеет конфликты'
         
         # Проверяем что специалист может выполнять услугу
         service = service_variant.service
@@ -1062,10 +1081,17 @@ def validate_booking_edit_view(request, pk):
                 'error': 'Выбранный кабинет не подходит для данной услуги'
             })
         
-        return JsonResponse({
+        response_data = {
             'valid': True,
             'message': 'Данные валидны'
-        })
+        }
+        
+        # Добавляем предупреждение если есть конфликты
+        if warning:
+            response_data['warning'] = warning
+            response_data['conflicts'] = conflicts
+        
+        return JsonResponse(response_data)
         
     except Exception as e:
         logger.error(f"Error validating booking edit {pk}: {e}", exc_info=True)
@@ -1209,6 +1235,8 @@ def quick_create_booking_view(request):
                             specialist=specialist,
                             cabinet=cabinet
                         )
+                        # Формируем предупреждение о конфликтах, но не блокируем создание
+                        conflict_warning = None
                         if conflicts:
                             messages_list = []
                             for index, start_dt, conflict_data in conflicts[:3]:
@@ -1219,9 +1247,7 @@ def quick_create_booking_view(request):
                                 )
                             if len(conflicts) > 3:
                                 messages_list.append('и другие конфликты…')
-                            return JsonResponse({
-                                'error': 'Невозможно создать серию бронирований. Конфликты: ' + '; '.join(messages_list)
-                            }, status=400)
+                            conflict_warning = 'Конфликты при создании серии: ' + '; '.join(messages_list)
 
                         series.save()
                         created_bookings = []
@@ -1242,12 +1268,16 @@ def quick_create_booking_view(request):
 
                         created_count = len(created_bookings)
                         logger.info(f"Created booking series #{series.id} with {created_count} items by {request.user.username}")
-                        return JsonResponse({
+                        response_data = {
                             'success': True,
                             'message': f'Создано {created_count} повторяющихся бронирований',
                             'booking_id': created_bookings[0].id,
                             'series_id': series.id
-                        })
+                        }
+                        # Добавляем предупреждение если есть конфликты
+                        if conflict_warning:
+                            response_data['warning'] = conflict_warning
+                        return JsonResponse(response_data)
                     else:
                         booking = Booking.objects.create(
                             guest_name=guest_name,
@@ -1327,6 +1357,8 @@ def duplicate_booking_view(request):
         cabinet=original_booking.cabinet
     )
 
+    # Формируем предупреждение о конфликтах, но не блокируем копирование
+    conflict_warning = None
     if conflicts:
         conflict_messages = []
         if conflicts.get('specialist_busy'):
@@ -1337,8 +1369,7 @@ def duplicate_booking_view(request):
             conflict_messages.append('Специалист не работает в это время')
         if conflicts.get('cabinet_not_available'):
             conflict_messages.append('Кабинет недоступен в это время')
-        message = conflict_messages[0] if conflict_messages else 'Выбранное время недоступно'
-        return JsonResponse({'success': False, 'error': message}, status=400)
+        conflict_warning = '; '.join(conflict_messages) if conflict_messages else 'Выбранное время имеет конфликты'
 
     try:
         with transaction.atomic():
@@ -1366,11 +1397,17 @@ def duplicate_booking_view(request):
         request.user.username
     )
 
-    return JsonResponse({
+    response_data = {
         'success': True,
         'message': 'Бронирование скопировано',
         'booking_id': duplicated_booking.id
-    })
+    }
+    
+    # Добавляем предупреждение если есть конфликты
+    if conflict_warning:
+        response_data['warning'] = conflict_warning
+    
+    return JsonResponse(response_data)
 
 
 @admin_required
@@ -1412,10 +1449,7 @@ def update_booking_time_view(request):
             logger.error(f"Invalid datetime format in update_booking_time_view: {start_datetime_str}, error: {e}")
             return JsonResponse({'error': 'Неверный формат даты и времени'}, status=400)
         
-        # Проверяем доступность нового слота используя check_booking_conflicts
-        # Это исключает само изменяемое бронирование из проверки
-        
-        # Сначала проверяем текущий кабинет
+        # Проверяем конфликты для предупреждения (не блокируем обновление)
         conflicts = check_booking_conflicts(
             start_time=new_start_time,
             service_variant=booking.service_variant,
@@ -1424,54 +1458,36 @@ def update_booking_time_view(request):
             exclude_booking_id=booking.id
         )
         
-        new_cabinet = booking.cabinet
-        
-        # Если текущий кабинет недоступен, ищем доступный
+        # Формируем предупреждение о конфликтах
+        conflict_warning = None
         if conflicts:
-            logger.debug(f"Current cabinet {booking.cabinet.id} not available, searching for alternatives")
-            
-            # Получаем все кабинеты подходящего типа для услуги
-            service = booking.service_variant.service
-            required_cabinet_types = service.required_cabinet_types.all()
-            valid_cabinets = Cabinet.objects.filter(
-                cabinet_type__in=required_cabinet_types,
-                is_active=True
-            )
-            
-            # Проверяем каждый кабинет на доступность
-            found_cabinet = None
-            for cab in valid_cabinets:
-                cab_conflicts = check_booking_conflicts(
-                    start_time=new_start_time,
-                    service_variant=booking.service_variant,
-                    specialist=booking.specialist,
-                    cabinet=cab,
-                    exclude_booking_id=booking.id
-                )
-                if not cab_conflicts:
-                    found_cabinet = cab
-                    logger.debug(f"Found available cabinet {cab.id} for booking {booking.id}")
-                    break
-            
-            if not found_cabinet:
-                logger.warning(f"No available cabinet found for booking {booking.id} at {new_start_time}")
-                return JsonResponse({'error': 'Нет доступных кабинетов для выбранного времени'}, status=400)
-            
-            new_cabinet = found_cabinet
-            logger.info(f"Using alternative cabinet {new_cabinet.id} for booking {booking.id}")
-        else:
-            logger.debug(f"Current cabinet {booking.cabinet.id} is available for new time")
+            conflict_messages = []
+            if conflicts.get('specialist_busy'):
+                conflict_messages.append('Специалист занят в это время')
+            if conflicts.get('cabinet_busy'):
+                conflict_messages.append('Кабинет занят в это время')
+            if conflicts.get('specialist_not_available'):
+                conflict_messages.append('Специалист не работает в это время')
+            if conflicts.get('cabinet_not_available'):
+                conflict_messages.append('Кабинет недоступен в это время')
+            conflict_warning = '; '.join(conflict_messages) if conflict_messages else 'Выбранное время имеет конфликты'
         
-        # Обновляем бронирование
+        # Обновляем бронирование (даже при конфликтах)
         booking.start_time = new_start_time
-        booking.cabinet = new_cabinet
         booking.save()
         
-        logger.info(f"Booking time updated: {booking.id} by {request.user.username}, new time: {new_start_time}, cabinet: {new_cabinet.id}")
-        return JsonResponse({
+        logger.info(f"Booking time updated: {booking.id} by {request.user.username}, new time: {new_start_time}")
+        
+        response_data = {
             'success': True,
             'message': 'Время бронирования успешно изменено'
-        })
+        }
+        
+        # Добавляем предупреждение если есть конфликты
+        if conflict_warning:
+            response_data['warning'] = conflict_warning
+        
+        return JsonResponse(response_data)
         
     except (ValueError, TypeError) as e:
         logger.error(f"Error updating booking time: {e}", exc_info=True)

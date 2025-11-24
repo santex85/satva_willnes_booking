@@ -525,7 +525,7 @@ class BookingEditForm(forms.ModelForm):
                 'cabinet': 'Выбранный кабинет не подходит для данной услуги'
             })
         
-        # Проверка конфликтов (исключая текущее бронирование)
+        # Проверка конфликтов (исключая текущее бронирование) - только для предупреждения
         from .utils import check_booking_conflicts
         booking_id = self.instance.pk if self.instance else None
         conflicts = check_booking_conflicts(
@@ -536,6 +536,7 @@ class BookingEditForm(forms.ModelForm):
             exclude_booking_id=booking_id
         )
         
+        # Сохраняем информацию о конфликтах для предупреждения (не блокируем сохранение)
         if conflicts:
             conflict_messages = []
             if conflicts.get('specialist_busy'):
@@ -547,9 +548,9 @@ class BookingEditForm(forms.ModelForm):
             if conflicts.get('cabinet_not_available'):
                 conflict_messages.append('Кабинет недоступен в это время')
             
-            raise forms.ValidationError({
-                'start_datetime': '; '.join(conflict_messages) if conflict_messages else 'Выбранное время недоступно'
-            })
+            # Сохраняем предупреждение вместо блокировки
+            cleaned_data['conflicts'] = conflicts
+            cleaned_data['conflicts_warning'] = '; '.join(conflict_messages) if conflict_messages else 'Выбранное время имеет конфликты'
 
         cleaned_data['start_datetime'] = start_time
 

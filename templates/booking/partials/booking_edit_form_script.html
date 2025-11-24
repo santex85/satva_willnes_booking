@@ -195,12 +195,20 @@
                         return;
                     }
                     if (data.valid) {
-                        validationMessage.classList.remove('alert-danger');
-                        validationMessage.classList.add('alert-success', 'd-none');
-                        validationMessage.textContent = '';
-                        startDatetimeValidation.innerHTML = '<small class="text-success"><i class="bi bi-check-circle"></i> Время доступно</small>';
+                        // Показываем предупреждение если есть конфликты, но не блокируем
+                        if (data.warning) {
+                            validationMessage.classList.remove('alert-success', 'd-none');
+                            validationMessage.classList.add('alert-warning');
+                            validationMessage.innerHTML = `<i class="bi bi-exclamation-triangle"></i> <strong>Внимание:</strong> ${data.warning}`;
+                            startDatetimeValidation.innerHTML = `<small class="text-warning"><i class="bi bi-exclamation-triangle"></i> ${data.warning}</small>`;
+                        } else {
+                            validationMessage.classList.remove('alert-danger', 'alert-warning');
+                            validationMessage.classList.add('alert-success', 'd-none');
+                            validationMessage.textContent = '';
+                            startDatetimeValidation.innerHTML = '<small class="text-success"><i class="bi bi-check-circle"></i> Время доступно</small>';
+                        }
                     } else {
-                        validationMessage.classList.remove('alert-success', 'd-none');
+                        validationMessage.classList.remove('alert-success', 'alert-warning', 'd-none');
                         validationMessage.classList.add('alert-danger');
                         validationMessage.innerHTML = `<i class="bi bi-exclamation-triangle"></i> ${data.error || 'Ошибка валидации'}`;
                         startDatetimeValidation.innerHTML = `<small class="text-danger"><i class="bi bi-x-circle"></i> ${data.error || 'Ошибка'}</small>`;

@@ -341,7 +341,14 @@
             .then((response) => response.json().then((data) => ({ ok: response.ok, data })))
             .then(({ ok, data }) => {
                 if (ok && data.success) {
-                    showResultModal('Готово', data.message || 'Бронирование скопировано', true);
+                    // Показываем предупреждение если есть конфликты
+                    let message = data.message || 'Бронирование скопировано';
+                    if (data.warning) {
+                        message += `\n\n⚠️ Внимание: ${data.warning}`;
+                        showResultModal('Готово с предупреждением', message, true);
+                    } else {
+                        showResultModal('Готово', message, true);
+                    }
                     if (calendar) {
                         calendar.refetchEvents();
                     }
@@ -712,7 +719,14 @@
                 if (data.success) {
                     bookingEditModal.hide();
                     calendar.refetchEvents();
-                    showResultModal('Успех', data.message || 'Бронирование успешно обновлено', true);
+                    // Показываем предупреждение если есть конфликты
+                    let message = data.message || 'Бронирование успешно обновлено';
+                    if (data.warning) {
+                        message += `\n\n⚠️ Внимание: ${data.warning}`;
+                        showResultModal('Успех с предупреждением', message, true);
+                    } else {
+                        showResultModal('Успех', message, true);
+                    }
                 } else {
                     if (data.html) {
                         bookingEditModalBody.innerHTML = data.html;
@@ -1137,8 +1151,14 @@
                 // Обновляем календарь
                 calendar.refetchEvents();
             } else {
-                // Показываем успех
-                showResultModal('Успех', 'Время бронирования изменено', true);
+                // Показываем успех с предупреждением если есть конфликты
+                let message = data.message || 'Время бронирования изменено';
+                if (data.warning) {
+                    message += `\n\n⚠️ Внимание: ${data.warning}`;
+                    showResultModal('Успех с предупреждением', message, true);
+                } else {
+                    showResultModal('Успех', message, true);
+                }
             }
         })
         .catch(error => {
@@ -1342,9 +1362,16 @@
             const resultModal = new bootstrap.Modal(document.getElementById('resultModal'));
 
             if (data.success) {
-                document.getElementById('resultTitle').textContent = 'Успех';
-                document.getElementById('resultHeader').className = 'modal-header bg-success text-white';
-                document.getElementById('resultBody').innerHTML = `<p>${data.message}</p>`;
+                // Показываем предупреждение если есть конфликты
+                if (data.warning) {
+                    document.getElementById('resultTitle').textContent = 'Успех с предупреждением';
+                    document.getElementById('resultHeader').className = 'modal-header bg-warning text-dark';
+                    document.getElementById('resultBody').innerHTML = `<p>${data.message}</p><p class="mt-2"><strong>⚠️ Внимание:</strong> ${data.warning}</p>`;
+                } else {
+                    document.getElementById('resultTitle').textContent = 'Успех';
+                    document.getElementById('resultHeader').className = 'modal-header bg-success text-white';
+                    document.getElementById('resultBody').innerHTML = `<p>${data.message}</p>`;
+                }
             } else {
                 document.getElementById('resultTitle').textContent = 'Ошибка';
                 document.getElementById('resultHeader').className = 'modal-header bg-danger text-white';

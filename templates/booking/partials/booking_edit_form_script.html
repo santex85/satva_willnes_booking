@@ -448,6 +448,151 @@
             syncExcludedDates();
         }, { capture: true });
 
+        // Загрузка логов бронирования
+        const logsCard = container.querySelector('[data-role="booking-logs-card"]');
+        const logsBody = container.querySelector('[data-role="booking-logs-body"]');
+        const refreshLogsBtn = container.querySelector('[data-role="refresh-logs"]');
+        const logsUrl = form.dataset.logsUrl;
+        const logsCollapse = container.querySelector('#bookingLogsCollapse');
+
+        function loadBookingLogs() {
+            if (!logsUrl || !logsBody) return;
+
+            logsBody.innerHTML = `
+                <div class="text-center py-3">
+                    <div class="spinner-border spinner-border-sm text-info" role="status">
+                        <span class="visually-hidden">Загрузка...</span>
+                    </div>
+                    <p class="text-muted small mt-2 mb-0">Загрузка истории...</p>
+                </div>
+            `;
+
+            fetch(logsUrl)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success && data.logs) {
+                        renderLogs(data.logs);
+                    } else {
+                        logsBody.innerHTML = '<p class="text-muted text-center py-3">История изменений недоступна</p>';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading booking logs:', error);
+                    logsBody.innerHTML = '<p class="text-danger text-center py-3">Ошибка загрузки истории</p>';
+                });
+        }
+        
+        // Автоматически раскрываем логи при первой загрузке (опционально)
+        // Можно раскомментировать, если нужно автоматически раскрывать
+        // if (logsCollapse) {
+        //     const bsCollapse = new bootstrap.Collapse(logsCollapse, { toggle: false });
+        //     bsCollapse.show();
+        // }
+
+        function renderLogs(logs) {
+            if (!logs || logs.length === 0) {
+                logsBody.innerHTML = '<p class="text-muted text-center py-3">История изменений пуста</p>';
+                return;
+            }
+
+            const actionIcons = {
+                'created': 'bi-plus-circle text-success',
+                'updated': 'bi-pencil text-primary',
+                'deleted': 'bi-trash text-danger',
+                'status_changed': 'bi-flag text-warning',
+                'time_changed': 'bi-clock text-info',
+                'specialist_changed': 'bi-person text-primary',
+                'cabinet_changed': 'bi-door-open text-primary',
+                'service_changed': 'bi-briefcase text-primary',
+                'series_created': 'bi-arrow-repeat text-success',
+                'series_updated': 'bi-arrow-repeat text-primary',
+                'duplicated': 'bi-files text-info'
+            };
+
+            const actionColors = {
+                'created': 'success',
+                'updated': 'primary',
+                'deleted': 'danger',
+                'status_changed': 'warning',
+                'time_changed': 'info',
+                'specialist_changed': 'primary',
+                'cabinet_changed': 'primary',
+                'service_changed': 'primary',
+                'series_created': 'success',
+                'series_updated': 'primary',
+                'duplicated': 'info'
+            };
+
+            let html = '<div class="list-group list-group-flush">';
+            logs.forEach(log => {
+                const iconClass = actionIcons[log.action] || 'bi-circle text-secondary';
+                const badgeColor = actionColors[log.action] || 'secondary';
+                
+                html += `
+                    <div class="list-group-item px-0 py-2 border-0 border-bottom">
+                        <div class="d-flex align-items-start">
+                            <div class="flex-shrink-0 me-2">
+                                <i class="bi ${iconClass} fs-5"></i>
+                            </div>
+                            <div class="flex-grow-1">
+                                <div class="d-flex justify-content-between align-items-start mb-1">
+                                    <div>
+                                        <span class="badge bg-${badgeColor} me-2">${log.action_display}</span>
+                                        <span class="text-muted small">${log.created_at}</span>
+                                    </div>
+                                </div>
+                                <p class="mb-1 small">${escapeHtml(log.message)}</p>
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <span class="text-muted small">
+                                        <i class="bi bi-person"></i> ${escapeHtml(log.user_full_name || log.user)}
+                                    </span>
+                                    ${log.ip_address ? `<span class="text-muted small"><i class="bi bi-globe"></i> ${escapeHtml(log.ip_address)}</span>` : ''}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            html += '</div>';
+
+            logsBody.innerHTML = html;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        if (logsUrl && logsBody) {
+            // Загружаем логи только при раскрытии аккордеона
+            if (logsCollapse) {
+                logsCollapse.addEventListener('show.bs.collapse', function() {
+                    if (logsBody.querySelector('.spinner-border')) {
+                        loadBookingLogs();
+                    }
+                });
+            } else {
+                // Если аккордеон не найден, загружаем сразу (fallback)
+                loadBookingLogs();
+            }
+        }
+
+        if (refreshLogsBtn) {
+            refreshLogsBtn.addEventListener('click', function(e) {
+                e.stopPropagation(); // Предотвращаем закрытие аккордеона
+                loadBookingLogs();
+            });
+        }
+
+        // Автоматически загружаем кабинеты при инициализации, если все поля заполнены
+        if (serviceVariantSelect.value && specialistSelect.value && startDatetimeInput.value) {
+            // Небольшая задержка, чтобы убедиться, что все элементы готовы
+            setTimeout(function() {
+                loadAvailableCabinets();
+            }, 100);
+        }
+
         if (options && typeof options.onInit === 'function') {
             options.onInit(form);
         }

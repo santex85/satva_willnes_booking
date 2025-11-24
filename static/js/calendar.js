@@ -717,6 +717,15 @@
             })
             .then(data => {
                 if (data.success) {
+                    // Обновляем логи если форма еще открыта
+                    const logsBody = bookingEditModalBody.querySelector('[data-role="booking-logs-body"]');
+                    if (logsBody) {
+                        const refreshBtn = bookingEditModalBody.querySelector('[data-role="refresh-logs"]');
+                        if (refreshBtn) {
+                            refreshBtn.click();
+                        }
+                    }
+                    
                     bookingEditModal.hide();
                     calendar.refetchEvents();
                     // Показываем предупреждение если есть конфликты

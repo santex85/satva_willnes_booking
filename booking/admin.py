@@ -16,6 +16,7 @@ from .models import (
     ScheduleTemplateDay,
     CabinetClosure,
     DeletedBooking,
+    BookingLog,
 )
 
 
@@ -240,6 +241,42 @@ class DeletedBookingAdmin(admin.ModelAdmin):
         return timezone.localtime(obj.deleted_at).strftime('%d.%m.%Y %H:%M')
     get_deleted_at.short_description = 'Удалено'
     get_deleted_at.admin_order_field = 'deleted_at'
+
+
+@admin.register(BookingLog)
+class BookingLogAdmin(admin.ModelAdmin):
+    """Admin для логов бронирований"""
+    list_display = ('booking', 'action', 'user', 'created_at', 'message_short')
+    list_filter = ('action', 'created_at', 'user')
+    search_fields = ('booking__guest_name', 'message', 'user__username')
+    readonly_fields = ('booking', 'action', 'user', 'message', 'old_values', 'new_values', 'created_at', 'ip_address')
+    date_hierarchy = 'created_at'
+    ordering = ('-created_at',)
+    
+    fieldsets = (
+        ('Основная информация', {
+            'fields': ('booking', 'action', 'user', 'message', 'created_at', 'ip_address')
+        }),
+        ('Детали изменений', {
+            'fields': ('old_values', 'new_values'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def message_short(self, obj):
+        """Короткое сообщение для списка"""
+        if obj.message:
+            return obj.message[:50] + '...' if len(obj.message) > 50 else obj.message
+        return '-'
+    message_short.short_description = 'Сообщение'
+    
+    def has_add_permission(self, request):
+        """Запрещаем создание логов вручную"""
+        return False
+    
+    def has_change_permission(self, request, obj=None):
+        """Запрещаем редактирование логов"""
+        return False
 
 
 admin.site.register(SystemSettings, SingletonModelAdmin)

@@ -33,6 +33,7 @@ urlpatterns = [
     path('booking/update-time/', views.update_booking_time_view, name='update_booking_time'),
     path('booking/<int:pk>/', views.booking_detail_view, name='booking_detail'),
     path('booking/<int:pk>/validate/', views.validate_booking_edit_view, name='validate_booking_edit'),
+    path('booking/<int:pk>/logs/', views.booking_logs_view, name='booking_logs'),
     path('booking/<int:pk>/delete/', views.BookingDeleteView.as_view(), name='booking_delete'),
     path('manage-schedules/', views.manage_schedules_view, name='manage_schedules'),
     path('schedules/copy/', views.copy_schedule_view, name='copy_schedule'),

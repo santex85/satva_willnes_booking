@@ -31,6 +31,7 @@ from .decorators import admin_required, specialist_required, staff_required
 from .utils import find_available_slots, check_booking_conflicts
 from .restore_utils import restore_booking, restore_series, check_restore_conflicts
 from .signals import set_current_user, clear_thread_locals
+from .log_utils import log_booking_action, get_booking_changes
 from .forms import (
     QuickBookingForm,
     SelectServiceForm,
@@ -626,40 +627,22 @@ def get_available_cabinets_view(request):
                 logger.warning(f"Invalid datetime format: {datetime_str}")
                 return JsonResponse({'error': 'Неверный формат даты и времени'}, status=400)
         
-        # Используем check_booking_conflicts для проверки доступности кабинетов
-        # Это позволяет исключить текущее бронирование из проверки
-        
-        # Получаем все кабинеты подходящего типа для услуги
+        # Получаем все кабинеты подходящего типа для услуги (без проверки конфликтов)
         service = service_variant.service
         required_cabinet_types = service.required_cabinet_types.all()
         valid_cabinets = Cabinet.objects.filter(
             cabinet_type__in=required_cabinet_types,
             is_active=True
-        )
+        ).order_by('name')
         
-        # Проверяем каждый кабинет на доступность
-        available_cabinets = []
-        exclude_id = int(exclude_booking_id) if exclude_booking_id else None
+        # Возвращаем все подходящие кабинеты без проверки доступности
+        cabinets_data = [{'id': cab.id, 'name': cab.name} for cab in valid_cabinets]
         
-        for cabinet in valid_cabinets:
-            conflicts = check_booking_conflicts(
-                start_time=start_datetime,
-                service_variant=service_variant,
-                specialist=specialist,
-                cabinet=cabinet,
-                exclude_booking_id=exclude_id
-            )
-            
-            if not conflicts:
-                available_cabinets.append(cabinet)
+        if not cabinets_data:
+            logger.warning(f"No suitable cabinets for service {service_variant_id}")
+            return JsonResponse({'error': 'Нет подходящих кабинетов для данной услуги'}, status=404)
         
-        if not available_cabinets:
-            logger.warning(f"No available cabinets for specialist {specialist_id}, datetime {datetime_str}, exclude_booking_id={exclude_id}")
-            return JsonResponse({'error': 'Слот не найден или недоступен'}, status=404)
-        
-        cabinets_data = [{'id': cab.id, 'name': cab.name} for cab in available_cabinets]
-        
-        logger.debug(f"Returning {len(cabinets_data)} available cabinets for slot, exclude_booking_id={exclude_id}")
+        logger.debug(f"Returning {len(cabinets_data)} suitable cabinets for service")
         return JsonResponse({'cabinets': cabinets_data}, safe=False)
         
     except (ValueError, ServiceVariant.DoesNotExist, SpecialistProfile.DoesNotExist) as e:
@@ -867,7 +850,7 @@ def create_booking_view(request):
             return redirect('select_service')
         
         # Создаем бронирование
-        Booking.objects.create(
+        booking = Booking.objects.create(
             guest_name=request.POST.get('guest_name'),
             guest_room_number=request.POST.get('guest_room_number'),
             service_variant_id=service_variant_id,
@@ -877,6 +860,16 @@ def create_booking_view(request):
             created_by=request.user,
             status='confirmed'
         )
+        
+        # Логируем создание
+        log_booking_action(
+            booking=booking,
+            action='created',
+            user=request.user,
+            message=f'Создано бронирование для гостя {booking.guest_name}',
+            request=request
+        )
+        
         messages.success(request, 'Бронирование успешно создано')
         return redirect('calendar')
         
@@ -908,6 +901,7 @@ def booking_detail_view(request, pk):
         'calendar_url': reverse('calendar'),
         'back_url': reverse('calendar'),
         'validate_url': reverse('validate_booking_edit', args=[booking.pk]),
+        'logs_url': reverse('booking_logs', args=[booking.pk]),
         'available_cabinets_url': reverse('available_cabinets'),
         'specialists_url': reverse('specialists_for_service'),
         'delete_url': reverse('booking_delete', args=[booking.pk]),
@@ -936,6 +930,9 @@ def booking_detail_view(request, pk):
                 apply_scope = 'series'
 
             try:
+                # Сохраняем старые значения для логирования
+                old_booking = Booking.objects.get(pk=booking.pk)
+                
                 if apply_scope == 'series':
                     message_text = handle_series_booking_update(
                         booking=booking,
@@ -943,6 +940,7 @@ def booking_detail_view(request, pk):
                         recurrence_payload=recurrence_payload,
                         user=request.user
                     )
+                    action = 'series_updated'
                 else:
                     message_text = handle_single_booking_update(
                         booking=booking,
@@ -950,6 +948,43 @@ def booking_detail_view(request, pk):
                         recurrence_enabled=recurrence_enabled,
                         user=request.user
                     )
+                    action = 'updated'
+                
+                # Получаем обновленное бронирование
+                booking.refresh_from_db()
+                
+                # Определяем изменения
+                old_values, new_values = get_booking_changes(old_booking, booking)
+                
+                # Определяем тип изменений для более детального сообщения
+                changes = []
+                if old_values.get('start_time') != new_values.get('start_time'):
+                    changes.append('время')
+                if old_values.get('specialist_id') != new_values.get('specialist_id'):
+                    changes.append('специалист')
+                if old_values.get('cabinet_id') != new_values.get('cabinet_id'):
+                    changes.append('кабинет')
+                if old_values.get('service_variant_id') != new_values.get('service_variant_id'):
+                    changes.append('услуга')
+                if old_values.get('status') != new_values.get('status'):
+                    changes.append('статус')
+                    action = 'status_changed'
+                if old_values.get('guest_name') != new_values.get('guest_name'):
+                    changes.append('имя гостя')
+                
+                change_text = ', '.join(changes) if changes else 'данные'
+                log_message = f'Обновлено бронирование: изменено {change_text}'
+                
+                # Логируем обновление
+                log_booking_action(
+                    booking=booking,
+                    action=action,
+                    user=request.user,
+                    message=log_message,
+                    old_values=old_values if old_values else None,
+                    new_values=new_values if new_values else None,
+                    request=request
+                )
 
                 logger.info(f"Booking {booking.id} updated by {request.user.username} scope={apply_scope}")
                 
@@ -1102,6 +1137,38 @@ def validate_booking_edit_view(request, pk):
 
 
 @admin_required
+def booking_logs_view(request, pk):
+    """
+    API endpoint для получения логов бронирования
+    """
+    booking = get_object_or_404(Booking, pk=pk)
+    
+    from .models import BookingLog
+    logs = BookingLog.objects.filter(booking=booking).select_related('user').order_by('-created_at')[:50]
+    
+    logs_data = []
+    for log in logs:
+        logs_data.append({
+            'id': log.id,
+            'action': log.action,
+            'action_display': log.get_action_display(),
+            'message': log.message,
+            'user': log.user.username if log.user else 'Система',
+            'user_full_name': log.user.get_full_name() if log.user and hasattr(log.user, 'get_full_name') else (log.user.username if log.user else 'Система'),
+            'created_at': timezone.localtime(log.created_at).strftime('%d.%m.%Y %H:%M:%S'),
+            'ip_address': str(log.ip_address) if log.ip_address else None,
+            'old_values': log.old_values,
+            'new_values': log.new_values,
+        })
+    
+    return JsonResponse({
+        'success': True,
+        'logs': logs_data,
+        'count': len(logs_data)
+    })
+
+
+@admin_required
 def quick_create_booking_view(request):
     """
     Быстрое создание бронирования через AJAX (модальное окно)
@@ -1121,98 +1188,34 @@ def quick_create_booking_view(request):
                 if timezone.is_naive(start_datetime):
                     start_datetime = timezone.make_aware(start_datetime)
                 
-                # Конвертируем в локальное время для сравнения
-                local_start = timezone.localtime(start_datetime)
+                # Используем время из формы напрямую (без проверки слотов)
+                final_start_time = start_datetime
                 
-                logger.info(f"Quick booking attempt: date={local_start.date()}, time={local_start.time()}, specialist={specialist.id}, service={service_variant.id}")
-                
-                # Проверяем доступность слота
-                date = local_start.date()
-                available_slots = find_available_slots(date, service_variant)
-                
-                logger.info(f"Found {len(available_slots)} available slots for date {date}")
-                
-                # Фильтруем слоты по специалисту
-                specialist_slots = [slot for slot in available_slots if slot['specialist'].id == specialist.id]
-                logger.info(f"Found {len(specialist_slots)} slots for specialist {specialist.id}")
-                
-                # Ищем подходящий слот - сначала точное совпадение, затем ближайший
-                suitable_slot = None
-                min_diff = None
-                
-                for slot in specialist_slots:
-                    slot_start = slot['start_time']
-                    # Конвертируем в локальное время для сравнения
-                    local_slot = timezone.localtime(slot_start)
-                    
-                    # Точное совпадение по часам и минутам
-                    if (local_slot.year == local_start.year and
-                        local_slot.month == local_start.month and
-                        local_slot.day == local_start.day and
-                        local_slot.hour == local_start.hour and
-                        local_slot.minute == local_start.minute):
-                        suitable_slot = slot
-                        break
-                    
-                    # Если точного совпадения нет, находим ближайший слот (не ранее выбранного времени)
-                    if local_slot >= local_start:
-                        diff = (local_slot - local_start).total_seconds()
-                        if min_diff is None or diff < min_diff:
-                            min_diff = diff
-                            suitable_slot = slot
-                
-                if not suitable_slot:
-                    if not specialist_slots:
-                        return JsonResponse({
-                            'error': f'Нет доступных слотов для специалиста {specialist.full_name} на {date.strftime("%d.%m.%Y")}. Проверьте график работы специалиста.'
-                        }, status=400)
-                    else:
-                        return JsonResponse({
-                            'error': f'Выбранное время ({local_start.strftime("%H:%M")}) недоступно. Ближайшие доступные слоты начинаются с {timezone.localtime(specialist_slots[0]["start_time"]).strftime("%H:%M")}'
-                        }, status=400)
-                
-                # Используем время из найденного слота (правильное время из графика)
-                final_start_time = suitable_slot['start_time']
+                logger.info(f"Quick booking attempt: date={timezone.localtime(start_datetime).date()}, time={timezone.localtime(start_datetime).time()}, specialist={specialist.id}, service={service_variant.id}")
                 
                 # Определяем кабинет
                 selected_cabinet = form.cleaned_data.get('cabinet')
-                if selected_cabinet:
-                    # Проверяем что выбранный кабинет доступен для этого слота
-                    available_cabinets = suitable_slot.get('available_cabinets', [])
-                    if available_cabinets:
-                        cabinet_ids = [cab.id for cab in available_cabinets]
-                        if selected_cabinet.id not in cabinet_ids:
-                            return JsonResponse({
-                                'error': 'Выбранный кабинет недоступен для данного времени'
-                            }, status=400)
-                        cabinet = selected_cabinet
-                    elif suitable_slot.get('cabinet'):
-                        # Для обратной совместимости со старым форматом
-                        if suitable_slot['cabinet'].id != selected_cabinet.id:
-                            return JsonResponse({
-                                'error': 'Выбранный кабинет недоступен для данного времени'
-                            }, status=400)
-                        cabinet = selected_cabinet
-                    else:
-                        cabinet = selected_cabinet
-                else:
-                    # Если кабинет не выбран, используем первый доступный из слота
-                    if suitable_slot.get('available_cabinets'):
-                        cabinet = suitable_slot['available_cabinets'][0]
-                    elif suitable_slot.get('cabinet'):
-                        cabinet = suitable_slot['cabinet']
-                    else:
-                        return JsonResponse({
-                            'error': 'Нет доступных кабинетов для данного времени'
-                        }, status=400)
-                
-                # Дополнительная валидация: проверяем что кабинет подходит для услуги
                 service = service_variant.service
                 required_cabinet_types = service.required_cabinet_types.all()
-                if cabinet.cabinet_type not in required_cabinet_types:
-                    return JsonResponse({
-                        'error': 'Выбранный кабинет не подходит для данной услуги'
-                    }, status=400)
+                
+                if selected_cabinet:
+                    # Проверяем что выбранный кабинет подходит для услуги
+                    if selected_cabinet.cabinet_type not in required_cabinet_types:
+                        return JsonResponse({
+                            'error': 'Выбранный кабинет не подходит для данной услуги'
+                        }, status=400)
+                    cabinet = selected_cabinet
+                else:
+                    # Если кабинет не выбран, берем первый подходящий кабинет для услуги
+                    cabinet = Cabinet.objects.filter(
+                        cabinet_type__in=required_cabinet_types,
+                        is_active=True
+                    ).first()
+                    
+                    if not cabinet:
+                        return JsonResponse({
+                            'error': 'Нет доступных кабинетов для данной услуги'
+                        }, status=400)
                 
                 recurrence_payload = form.cleaned_data.get('recurrence_payload')
 
@@ -1268,6 +1271,17 @@ def quick_create_booking_view(request):
 
                         created_count = len(created_bookings)
                         logger.info(f"Created booking series #{series.id} with {created_count} items by {request.user.username}")
+                        
+                        # Логируем создание серии
+                        for booking in created_bookings:
+                            log_booking_action(
+                                booking=booking,
+                                action='series_created',
+                                user=request.user,
+                                message=f'Создано бронирование в серии ({index} из {created_count})',
+                                request=request
+                            )
+                        
                         response_data = {
                             'success': True,
                             'message': f'Создано {created_count} повторяющихся бронирований',
@@ -1289,6 +1303,16 @@ def quick_create_booking_view(request):
                             created_by=request.user,
                             status='confirmed'
                         )
+                        
+                        # Логируем создание
+                        log_booking_action(
+                            booking=booking,
+                            action='created',
+                            user=request.user,
+                            message=f'Быстрое создание бронирования для гостя {guest_name}',
+                            request=request
+                        )
+                        
                         logger.info(f"Quick booking created: {booking.id} by {request.user.username}")
                         return JsonResponse({
                             'success': True,
@@ -1383,6 +1407,24 @@ def duplicate_booking_view(request):
                 created_by=request.user,
                 status=original_booking.status
             )
+            
+            # Логируем копирование
+            log_booking_action(
+                booking=duplicated_booking,
+                action='duplicated',
+                user=request.user,
+                message=f'Скопировано из бронирования #{original_booking.id}',
+                request=request
+            )
+            
+            # Логируем в оригинальное бронирование
+            log_booking_action(
+                booking=original_booking,
+                action='duplicated',
+                user=request.user,
+                message=f'Создана копия: бронирование #{duplicated_booking.id}',
+                request=request
+            )
     except Exception as exc:
         logger.error(
             f"Unable to duplicate booking #{original_booking.id}: {exc}",
@@ -1472,9 +1514,23 @@ def update_booking_time_view(request):
                 conflict_messages.append('Кабинет недоступен в это время')
             conflict_warning = '; '.join(conflict_messages) if conflict_messages else 'Выбранное время имеет конфликты'
         
+        # Сохраняем старое время для логирования
+        old_start_time = booking.start_time
+        
         # Обновляем бронирование (даже при конфликтах)
         booking.start_time = new_start_time
         booking.save()
+        
+        # Логируем изменение времени
+        log_booking_action(
+            booking=booking,
+            action='time_changed',
+            user=request.user,
+            message=f'Время изменено с {timezone.localtime(old_start_time).strftime("%d.%m.%Y %H:%M")} на {timezone.localtime(new_start_time).strftime("%d.%m.%Y %H:%M")}',
+            old_values={'start_time': old_start_time.isoformat()},
+            new_values={'start_time': new_start_time.isoformat()},
+            request=request
+        )
         
         logger.info(f"Booking time updated: {booking.id} by {request.user.username}, new time: {new_start_time}")
         
@@ -1519,6 +1575,7 @@ class BookingDeleteView(DeleteView):
 
     def delete(self, request, *args, **kwargs):
         self.object = self.get_object()
+        booking = self.object
         scope = request.POST.get('scope', 'single')
         deletion_reason = request.POST.get('deletion_reason', '')
         booking = self.object
@@ -1536,6 +1593,15 @@ class BookingDeleteView(DeleteView):
             if scope == 'series' and series:
                 with transaction.atomic():
                     count = series.bookings.count()
+                    # Логируем удаление каждого бронирования в серии
+                    for b in series.bookings.all():
+                        log_booking_action(
+                            booking=b,
+                            action='deleted',
+                            user=request.user,
+                            message=f'Удалено из серии (удалена вся серия из {count} бронирований)',
+                            request=request
+                        )
                     # Удаляем все бронирования серии (сигнал сработает для каждого)
                     series.bookings.all().delete()
                     series.delete()
@@ -1544,6 +1610,14 @@ class BookingDeleteView(DeleteView):
 
             with transaction.atomic():
                 series_to_update = booking.series
+                # Логируем удаление
+                log_booking_action(
+                    booking=booking,
+                    action='deleted',
+                    user=request.user,
+                    message=f'Бронирование удалено' + (f'. Причина: {deletion_reason}' if deletion_reason else ''),
+                    request=request
+                )
                 # Удаляем бронирование (сигнал pre_delete сработает автоматически)
                 booking.delete()
                 messages.success(request, 'Бронирование удалено')

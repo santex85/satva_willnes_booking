@@ -611,3 +611,79 @@ class DeletedBooking(models.Model):
             except:
                 pass
         return f"{guest_name} - {start_time} (удалено {timezone.localtime(self.deleted_at).strftime('%d.%m.%Y %H:%M')})"
+
+
+class BookingLog(models.Model):
+    """История действий с бронированием"""
+    
+    ACTION_CHOICES = [
+        ('created', 'Создано'),
+        ('updated', 'Обновлено'),
+        ('deleted', 'Удалено'),
+        ('status_changed', 'Изменен статус'),
+        ('time_changed', 'Изменено время'),
+        ('specialist_changed', 'Изменен специалист'),
+        ('cabinet_changed', 'Изменен кабинет'),
+        ('service_changed', 'Изменена услуга'),
+        ('series_created', 'Создана серия'),
+        ('series_updated', 'Обновлена серия'),
+        ('duplicated', 'Скопировано'),
+    ]
+    
+    booking = models.ForeignKey(
+        Booking,
+        on_delete=models.CASCADE,
+        related_name='logs',
+        verbose_name='Бронирование'
+    )
+    action = models.CharField(
+        max_length=50,
+        choices=ACTION_CHOICES,
+        verbose_name='Действие'
+    )
+    user = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='booking_logs',
+        verbose_name='Пользователь'
+    )
+    message = models.TextField(
+        verbose_name='Сообщение',
+        help_text='Описание действия'
+    )
+    old_values = models.JSONField(
+        null=True,
+        blank=True,
+        verbose_name='Старые значения',
+        help_text='Значения полей до изменения (JSON)'
+    )
+    new_values = models.JSONField(
+        null=True,
+        blank=True,
+        verbose_name='Новые значения',
+        help_text='Значения полей после изменения (JSON)'
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name='Дата и время'
+    )
+    ip_address = models.GenericIPAddressField(
+        null=True,
+        blank=True,
+        verbose_name='IP адрес'
+    )
+    
+    class Meta:
+        verbose_name = 'Лог бронирования'
+        verbose_name_plural = 'Логи бронирований'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['booking', '-created_at']),
+            models.Index(fields=['action']),
+            models.Index(fields=['user']),
+        ]
+    
+    def __str__(self):
+        return f"{self.booking.id} - {self.get_action_display()} ({timezone.localtime(self.created_at).strftime('%d.%m.%Y %H:%M')})"

@@ -1789,11 +1789,11 @@ def reports_view(request):
         end = form.cleaned_data['end_date']
         specialist = form.cleaned_data.get('specialist')
         
-        # Фильтр для всех запросов
+        # Фильтр для всех запросов по дате (показываем все бронирования в диапазоне дат)
+        # Включаем все статусы кроме отмененных
         bookings_filter = Booking.objects.filter(
-            start_time__date__range=[start, end],
-            status='confirmed'
-        )
+            start_time__date__range=[start, end]
+        ).exclude(status='canceled')
         
         if specialist:
             bookings_filter = bookings_filter.filter(specialist=specialist)
@@ -1848,11 +1848,11 @@ def download_report_view(request):
     end = form.cleaned_data['end_date']
     specialist = form.cleaned_data.get('specialist')
     
-    # Получаем бронирования с фильтрацией
+    # Получаем бронирования с фильтрацией (показываем все бронирования кроме отмененных)
+    # Используем фильтрацию по датам - берем все бронирования в диапазоне дат
     bookings_query = Booking.objects.filter(
-        start_time__date__range=[start, end],
-        status='confirmed'
-    ).select_related(
+        start_time__date__range=[start, end]
+    ).exclude(status='canceled').select_related(
         'service_variant', 'service_variant__service',
         'specialist', 'cabinet'
     ).order_by('start_time')

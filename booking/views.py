@@ -13,6 +13,8 @@ from django.contrib import messages
 from django.template.loader import render_to_string
 import datetime
 import logging
+import csv
+from decimal import Decimal
 
 from django.contrib.auth.models import User, Group
 from .models import (
@@ -1785,18 +1787,22 @@ def reports_view(request):
     if form.is_valid():
         start = form.cleaned_data['start_date']
         end = form.cleaned_data['end_date']
+        specialist = form.cleaned_data.get('specialist')
         
-        service_popularity = Booking.objects.filter(
+        # Фильтр для всех запросов
+        bookings_filter = Booking.objects.filter(
             start_time__date__range=[start, end],
             status='confirmed'
-        ).values('service_variant__service__name').annotate(
+        )
+        
+        if specialist:
+            bookings_filter = bookings_filter.filter(specialist=specialist)
+        
+        service_popularity = bookings_filter.values('service_variant__service__name').annotate(
             count=Count('id')
         ).order_by('-count')
         
-        specialist_load_qs = Booking.objects.filter(
-            start_time__date__range=[start, end],
-            status='confirmed'
-        ).values('specialist__full_name').annotate(
+        specialist_load_qs = bookings_filter.values('specialist__full_name').annotate(
             total_duration=Sum('service_variant__duration_minutes')
         ).order_by('-total_duration')
 
@@ -1822,8 +1828,100 @@ def reports_view(request):
     return render(request, 'booking/reports.html', {
         'form': form,
         'service_popularity': service_popularity,
-        'specialist_load': specialist_load
+        'specialist_load': specialist_load,
+        'has_filters': form.is_valid()
     })
+
+
+@admin_required
+def download_report_view(request):
+    """
+    Скачивание отчета по бронированиям в формате CSV
+    """
+    form = ReportForm(request.GET or None)
+    
+    if not form.is_valid():
+        messages.error(request, 'Неверные параметры отчета')
+        return redirect('reports')
+    
+    start = form.cleaned_data['start_date']
+    end = form.cleaned_data['end_date']
+    specialist = form.cleaned_data.get('specialist')
+    
+    # Получаем бронирования с фильтрацией
+    bookings_query = Booking.objects.filter(
+        start_time__date__range=[start, end],
+        status='confirmed'
+    ).select_related(
+        'service_variant', 'service_variant__service',
+        'specialist', 'cabinet'
+    ).order_by('start_time')
+    
+    if specialist:
+        bookings_query = bookings_query.filter(specialist=specialist)
+    
+    # Создаем CSV ответ
+    response = HttpResponse(content_type='text/csv; charset=utf-8')
+    
+    # Формируем имя файла
+    filename_parts = [f'otchet_{start.strftime("%Y-%m-%d")}_{end.strftime("%Y-%m-%d")}']
+    if specialist:
+        filename_parts.append(specialist.full_name.replace(' ', '_'))
+    filename = '_'.join(filename_parts) + '.csv'
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    
+    # Настраиваем CSV writer с поддержкой UTF-8 BOM для Excel
+    response.write('\ufeff')  # UTF-8 BOM для корректного отображения в Excel
+    writer = csv.writer(response, delimiter=';')
+    
+    # Заголовки
+    headers = [
+        'Дата',
+        'Время начала',
+        'Время окончания',
+        'Гость',
+        'Номер комнаты',
+        'Процедура',
+        'Длительность (мин)',
+        'Стоимость',
+        'Специалист',
+        'Кабинет',
+        'Статус'
+    ]
+    writer.writerow(headers)
+    
+    total_cost = Decimal('0')
+    
+    # Данные
+    for booking in bookings_query:
+        local_start = timezone.localtime(booking.start_time)
+        local_end = timezone.localtime(booking.end_time)
+        
+        cost = booking.service_variant.price
+        total_cost += cost
+        
+        row = [
+            local_start.strftime('%d.%m.%Y'),
+            local_start.strftime('%H:%M'),
+            local_end.strftime('%H:%M'),
+            booking.guest_name,
+            booking.guest_room_number or '',
+            str(booking.service_variant),
+            booking.service_variant.duration_minutes,
+            str(cost).replace('.', ','),  # Замена точки на запятую для Excel
+            booking.specialist.full_name,
+            booking.cabinet.name,
+            booking.get_status_display()
+        ]
+        writer.writerow(row)
+    
+    # Итоговая строка
+    writer.writerow([])  # Пустая строка
+    writer.writerow(['ИТОГО:', '', '', '', '', '', '', str(total_cost).replace('.', ','), '', '', ''])
+    
+    logger.info(f"Report downloaded: period={start} to {end}, specialist={specialist.full_name if specialist else 'all'}, bookings={bookings_query.count()}")
+    
+    return response
 
 
 def specialist_register_view(request):

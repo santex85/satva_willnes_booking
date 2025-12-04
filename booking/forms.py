@@ -306,6 +306,13 @@ class ReportForm(forms.Form):
         label='Конечная дата',
         initial=datetime.date.today
     )
+    specialist = forms.ModelChoiceField(
+        queryset=SpecialistProfile.objects.all().order_by('full_name'),
+        required=False,
+        widget=forms.Select(attrs={'class': 'form-select'}),
+        label='Специалист',
+        empty_label='Все специалисты'
+    )
 
 
 class SpecialistRegistrationForm(forms.Form):

@@ -90,3 +90,5 @@ def get_booking_changes(old_instance, new_instance):
     
     return old_values, new_values
 
+
+

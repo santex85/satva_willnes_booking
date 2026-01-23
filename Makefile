@@ -165,3 +165,9 @@ test-deploy: ## Тестирование скриптов деплоя (безо
 test-deploy-full: ## Полное тестирование скриптов деплоя (включая проверку функций)
 	@./scripts/test_deploy.sh --full
 
+rollback-quick: ## Быстрый откат к предыдущему состоянию (после деплоя)
+	@./scripts/rollback_quick.sh
+
+rollback-info: ## Показать информацию о последнем деплое
+	@./scripts/rollback_quick.sh --info
+

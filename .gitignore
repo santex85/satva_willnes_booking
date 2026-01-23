@@ -70,6 +70,10 @@ Desktop.ini
 # Server information reports (may contain sensitive data)
 server_info_*.md
 
+# Deployment state files (may contain paths to backups)
+deploy_state.json
+deploy_states/
+
 # Coverage reports
 htmlcov/
 .coverage

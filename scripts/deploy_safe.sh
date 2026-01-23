@@ -229,6 +229,16 @@ deploy_application() {
     # Обновление кода из git
     if [ -d .git ]; then
         log_action INFO "Обновление кода из git..."
+        
+        # Проверка на конфликтующие неотслеживаемые файлы
+        log_action INFO "Проверка на конфликтующие файлы..."
+        CONFLICTING_FILES=$(git status --porcelain 2>/dev/null | grep '^??' | awk '{print $2}' | grep -E '^scripts/(deploy_safe|rollback_quick|save_deploy_state|backup_db|restore_db|health_check|deploy_remote|collect_server_info|test_deploy)\.sh$' || true)
+        
+        if [ -n "$CONFLICTING_FILES" ]; then
+            log_action WARNING "Обнаружены конфликтующие файлы, удаление перед git pull..."
+            echo "$CONFLICTING_FILES" | xargs rm -f 2>/dev/null || true
+        fi
+        
         if ! git pull origin main; then
             log_action ERROR "Ошибка при обновлении кода из git"
             return 1
@@ -438,6 +448,18 @@ main() {
     log_action SUCCESS "Commit: $CURRENT_COMMIT"
     log_action SUCCESS "Лог: $DEPLOY_LOG"
     log_action SUCCESS "========================================="
+    
+    # Сохранение состояния деплоя для быстрого отката
+    if [ "$DRY_RUN" != true ] && [ -n "$PREVIOUS_COMMIT" ] && [ -n "$CURRENT_COMMIT" ]; then
+        log_action INFO "Сохранение состояния деплоя для быстрого отката..."
+        if [ -f "$SCRIPT_DIR/save_deploy_state.sh" ]; then
+            if "$SCRIPT_DIR/save_deploy_state.sh" "$PREVIOUS_COMMIT" "$CURRENT_COMMIT" "$BACKUP_FILE" "$DEPLOY_LOG" > /dev/null 2>&1; then
+                log_action SUCCESS "Состояние деплоя сохранено (для быстрого отката используйте: make rollback-quick)"
+            else
+                log_action WARNING "Не удалось сохранить состояние деплоя (не критично)"
+            fi
+        fi
+    fi
 }
 
 # Обработка ошибок

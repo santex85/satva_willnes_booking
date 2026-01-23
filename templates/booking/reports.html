@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load static %}
 
 {% block title %}Отчеты{% endblock %}
 
@@ -113,7 +114,128 @@
         </div>
     </div>
 </div>
-{% else %}
+{% endif %}
+
+{% if has_filters %}
+<div class="row g-3">
+    <div class="col-12">
+        <div class="card mb-3 mb-md-4">
+            <div class="card-header bg-primary text-white d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <h4 class="mb-0 h5"><i class="bi bi-person-lines-fill"></i> Статистика по гостям</h4>
+                <button type="button" class="btn btn-light btn-sm" id="reports-merge-btn" style="display: none;">
+                    <i class="bi bi-people-fill"></i> Объединить выбранных
+                </button>
+            </div>
+            <div class="card-body">
+                {% if guest_statistics %}
+                {{ guest_bookings_js|json_script:"guest-bookings-data" }}
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover" id="reports-guest-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 2rem;"><span class="visually-hidden">Объединить</span></th>
+                                <th>#</th>
+                                <th>Гость</th>
+                                <th>Комната</th>
+                                <th class="text-end">Визитов</th>
+                                <th class="text-end">Сумма</th>
+                                <th class="text-end">Средний чек</th>
+                                <th class="text-end">Время</th>
+                                <th>Первый визит</th>
+                                <th>Последний визит</th>
+                                <th>Услуги</th>
+                            </tr>
+                        </thead>
+                        <tbody id="reports-guest-tbody">
+                            {% for g in guest_statistics %}
+                            <tr class="guest-row" data-guest-name="{{ g.guest_name|escapejs }}">
+                                <td class="align-top">
+                                    <input type="checkbox" class="form-check-input guest-merge-cb" value="{{ g.guest_name|escapejs }}" aria-label="Объединить гостя">
+                                </td>
+                                <td class="align-top">{{ forloop.counter }}</td>
+                                <td class="align-top">
+                                    <div class="d-flex align-items-center gap-2">
+                                        <button type="button" class="btn btn-link p-0 text-start text-decoration-none guest-accordion-btn flex-grow-1" data-bs-toggle="collapse" data-bs-target="#guest-detail-{{ forloop.counter }}" aria-expanded="false" aria-controls="guest-detail-{{ forloop.counter }}">
+                                            {{ g.guest_name }}
+                                            <i class="bi bi-chevron-down guest-chevron"></i>
+                                        </button>
+                                        <a href="{% url 'download_guest_report' %}?start_date={{ request.GET.start_date|default:'' }}&end_date={{ request.GET.end_date|default:'' }}&guest_names={{ g.guest_name|urlencode }}" class="btn btn-sm btn-success guest-download-btn" data-guest-name="{{ g.guest_name|escapejs }}" title="Скачать отчёт по гостю">
+                                            <i class="bi bi-download"></i>
+                                        </a>
+                                    </div>
+                                </td>
+                                <td class="align-top">{{ g.room_number|default:"—" }}</td>
+                                <td class="text-end align-top"><span class="badge bg-primary">{{ g.visit_count }}</span></td>
+                                <td class="text-end align-top">{{ g.total_amount|floatformat:2 }}</td>
+                                <td class="text-end align-top">{{ g.avg_check|floatformat:2 }}</td>
+                                <td class="text-end align-top">{{ g.total_duration_display }}</td>
+                                <td class="align-top">{% if g.first_visit %}{{ g.first_visit|date:"d.m.Y" }}{% else %}—{% endif %}</td>
+                                <td class="align-top">{% if g.last_visit %}{{ g.last_visit|date:"d.m.Y" }}{% else %}—{% endif %}</td>
+                                <td class="align-top">
+                                    {% if g.services %}
+                                    <span class="text-truncate d-inline-block" style="max-width: 14rem;" title="{{ g.services|join:', ' }}">{{ g.services|join:", "|truncatechars:50 }}</span>
+                                    {% else %}
+                                    —
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            <tr class="detail-row">
+                                <td colspan="11" class="p-0 border-0 align-top">
+                                    <div class="collapse" id="guest-detail-{{ forloop.counter }}">
+                                        <div class="p-3 bg-light">
+                                            <div class="d-flex justify-content-end mb-2">
+                                                <a href="{% url 'download_guest_report' %}?start_date={{ form.start_date.value|default:request.GET.start_date|default:'' }}&end_date={{ form.end_date.value|default:request.GET.end_date|default:'' }}&guest_names={{ g.guest_name|urlencode }}" class="btn btn-sm btn-success guest-download-btn" data-guest-name="{{ g.guest_name|escapejs }}">
+                                                    <i class="bi bi-download"></i> Скачать отчёт по гостю
+                                                </a>
+                                            </div>
+                                            <table class="table table-sm table-bordered mb-0">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Дата</th>
+                                                        <th>Время</th>
+                                                        <th>Услуга</th>
+                                                        <th>Специалист</th>
+                                                        <th>Кабинет</th>
+                                                        <th>Статус</th>
+                                                        <th class="text-end">Сумма</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {% if g.bookings %}
+                                                        {% for b in g.bookings %}
+                                                        <tr>
+                                                            <td>{{ b.date|date:"d.m.Y" }}</td>
+                                                            <td>{{ b.time|time:"H:i" }}</td>
+                                                            <td>{{ b.service_variant }}</td>
+                                                            <td>{{ b.specialist }}</td>
+                                                            <td>{{ b.cabinet }}</td>
+                                                            <td>{{ b.status }}</td>
+                                                            <td class="text-end">{{ b.price|floatformat:2 }}</td>
+                                                        </tr>
+                                                        {% endfor %}
+                                                    {% else %}
+                                                        <tr><td colspan="7" class="text-muted">Нет визитов</td></tr>
+                                                    {% endif %}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-muted mb-0">Нет данных за выбранный период</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if not has_filters %}
 <div class="card">
     <div class="card-body text-center">
         <i class="bi bi-graph-up-arrow" style="font-size: 4rem; color: #6c757d;"></i>
@@ -121,6 +243,10 @@
     </div>
 </div>
 {% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/reports.js' %}"></script>
 {% endblock %}
 
 

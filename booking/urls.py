@@ -40,6 +40,7 @@ urlpatterns = [
     path('schedules/apply-template/', views.apply_template_view, name='apply_template'),
     path('reports/', views.reports_view, name='reports'),
     path('reports/download/', views.download_report_view, name='download_report'),
+    path('reports/download-guest/', views.download_guest_report_view, name='download_guest_report'),
     path('my-schedule/', views.my_schedule_view, name='my_schedule'),
     
     # Deleted bookings

@@ -7,7 +7,7 @@ from django.urls import reverse, reverse_lazy
 from django.utils.decorators import method_decorator
 from django.forms import modelformset_factory
 from django.db import transaction, models
-from django.db.models import Count, Sum
+from django.db.models import Count, Sum, Min, Max, Avg
 from django.utils import timezone
 from django.contrib import messages
 from django.template.loader import render_to_string
@@ -1783,25 +1783,28 @@ def reports_view(request):
     form = ReportForm(request.GET or None)
     service_popularity = None
     specialist_load = None
-    
+    guest_statistics = None
+    guest_bookings = {}
+    guest_bookings_js = {}
+
     if form.is_valid():
         start = form.cleaned_data['start_date']
         end = form.cleaned_data['end_date']
         specialist = form.cleaned_data.get('specialist')
-        
+
         # Фильтр для всех запросов по дате (показываем все бронирования в диапазоне дат)
         # Включаем все статусы кроме отмененных
         bookings_filter = Booking.objects.filter(
             start_time__date__range=[start, end]
         ).exclude(status='canceled')
-        
+
         if specialist:
             bookings_filter = bookings_filter.filter(specialist=specialist)
-        
+
         service_popularity = bookings_filter.values('service_variant__service__name').annotate(
             count=Count('id')
         ).order_by('-count')
-        
+
         specialist_load_qs = bookings_filter.values('specialist__full_name').annotate(
             total_duration=Sum('service_variant__duration_minutes')
         ).order_by('-total_duration')
@@ -1824,11 +1827,117 @@ def reports_view(request):
                 'total_duration_display': display,
                 'total_duration_minutes': minutes
             })
-    
+
+        # Статистика по гостям (группировка по точному совпадению guest_name)
+        try:
+            guest_stats_qs = bookings_filter.values('guest_name').annotate(
+                visit_count=Count('id'),
+                total_amount=Sum('service_variant__price'),
+                total_duration=Sum('service_variant__duration_minutes'),
+                first_visit=Min('start_time'),
+                last_visit=Max('start_time'),
+                room_number=Max('guest_room_number'),
+            ).order_by('-total_amount')
+
+            # Список уникальных услуг по гостям: (guest_name, service_name)
+            services_per_guest = defaultdict(list)
+            for row in bookings_filter.values_list('guest_name', 'service_variant__service__name').distinct():
+                gname, sname = row[0], row[1]
+                if sname and sname not in services_per_guest[gname]:
+                    services_per_guest[gname].append(sname)
+
+            guest_statistics = []
+            for item in guest_stats_qs:
+                minutes = item.get('total_duration') or 0
+                if minutes >= 60:
+                    hours = minutes // 60
+                    remaining_minutes = minutes % 60
+                    if remaining_minutes:
+                        duration_display = f"{hours} ч {remaining_minutes} мин"
+                    else:
+                        duration_display = f"{hours} ч"
+                else:
+                    duration_display = f"{minutes} мин"
+
+                total = item.get('total_amount') or Decimal('0')
+                count = item.get('visit_count') or 0
+                avg_check = (total / count) if count else Decimal('0')
+
+                first = item.get('first_visit')
+                last = item.get('last_visit')
+                first_local = timezone.localtime(first) if first else None
+                last_local = timezone.localtime(last) if last else None
+
+                guest_statistics.append({
+                    'guest_name': item['guest_name'],
+                    'room_number': (item.get('room_number') or '').strip() or None,
+                    'visit_count': count,
+                    'total_amount': total,
+                    'avg_check': avg_check,
+                    'total_duration_minutes': minutes,
+                    'total_duration_display': duration_display,
+                    'first_visit': first_local,
+                    'last_visit': last_local,
+                    'services': sorted(services_per_guest.get(item['guest_name'], [])),
+                })
+
+            # Детали бронирований по каждому гостю (для аккордеона)
+            guest_bookings = {}
+            guest_bookings_js = {}
+            for g in guest_statistics:
+                gname = g['guest_name']
+                bookings_qs = bookings_filter.filter(guest_name=gname).select_related(
+                    'service_variant', 'service_variant__service',
+                    'specialist', 'cabinet'
+                ).order_by('start_time')
+                blist = [
+                    {
+                        'id': b.id,
+                        'date': timezone.localtime(b.start_time).date(),
+                        'time': timezone.localtime(b.start_time).time(),
+                        'service_name': b.service_variant.service.name,
+                        'service_variant': str(b.service_variant),
+                        'specialist': b.specialist.full_name,
+                        'cabinet': b.cabinet.name,
+                        'status': b.get_status_display(),
+                        'price': b.service_variant.price,
+                        'duration_minutes': b.service_variant.duration_minutes,
+                        'guest_room_number': (b.guest_room_number or '').strip() or None,
+                    }
+                    for b in bookings_qs
+                ]
+                guest_bookings[gname] = blist
+                g['bookings'] = blist
+                guest_bookings_js[gname] = [
+                    {
+                        'id': x['id'],
+                        'date': x['date'].isoformat(),
+                        'time': x['time'].strftime('%H:%M'),
+                        'service_name': x['service_name'],
+                        'service_variant': x['service_variant'],
+                        'specialist': x['specialist'],
+                        'cabinet': x['cabinet'],
+                        'status': x['status'],
+                        'price': str(x['price']),
+                        'duration_minutes': x['duration_minutes'],
+                        'guest_room_number': x['guest_room_number'],
+                    }
+                    for x in blist
+                ]
+        except Exception as e:
+            logger.error(f"Ошибка при вычислении статистики по гостям: {e}", exc_info=True)
+            guest_statistics = []
+            guest_bookings = {}
+            guest_bookings_js = {}
+            messages.warning(request, 'Не удалось загрузить статистику по гостям. Пожалуйста, попробуйте еще раз.')
+
     return render(request, 'booking/reports.html', {
         'form': form,
         'service_popularity': service_popularity,
         'specialist_load': specialist_load,
+        'guest_statistics': guest_statistics,
+        'guest_bookings': guest_bookings if form.is_valid() else {},
+        'guest_bookings_js': guest_bookings_js,
         'has_filters': form.is_valid()
     })
 
@@ -1920,6 +2029,93 @@ def download_report_view(request):
     writer.writerow(['ИТОГО:', '', '', '', '', '', '', str(total_cost).replace('.', ','), '', '', ''])
     
     logger.info(f"Report downloaded: period={start} to {end}, specialist={specialist.full_name if specialist else 'all'}, bookings={bookings_query.count()}")
+    
+    return response
+
+
+@admin_required
+def download_guest_report_view(request):
+    """
+    Скачивание отчета по конкретному гостю (или объединённым гостям) в формате CSV
+    """
+    form = ReportForm(request.GET or None)
+    
+    if not form.is_valid():
+        messages.error(request, 'Неверные параметры отчета')
+        return redirect('reports')
+    
+    start = form.cleaned_data['start_date']
+    end = form.cleaned_data['end_date']
+    guest_names_param = request.GET.get('guest_names', '')
+    
+    if not guest_names_param:
+        messages.error(request, 'Не указаны имена гостей')
+        return redirect('reports')
+    
+    # Парсим список имён гостей (могут быть объединённые через + или запятую)
+    guest_names = [name.strip() for name in guest_names_param.replace('+', ',').split(',') if name.strip()]
+    
+    if not guest_names:
+        messages.error(request, 'Не указаны имена гостей')
+        return redirect('reports')
+    
+    # Получаем бронирования для указанных гостей
+    bookings_query = Booking.objects.filter(
+        start_time__date__range=[start, end],
+        guest_name__in=guest_names
+    ).exclude(status='canceled').select_related(
+        'service_variant', 'service_variant__service',
+        'specialist', 'cabinet'
+    ).order_by('start_time')
+    
+    # Создаем CSV ответ
+    response = HttpResponse(content_type='text/csv; charset=utf-8')
+    
+    # Формируем имя файла
+    guest_name_safe = '_'.join([name.replace(' ', '_')[:20] for name in guest_names[:2]])
+    if len(guest_names) > 2:
+        guest_name_safe += '_и_др'
+    filename = f'otchet_gost_{guest_name_safe}_{start.strftime("%Y-%m-%d")}_{end.strftime("%Y-%m-%d")}.csv'
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    
+    # Настраиваем CSV writer с поддержкой UTF-8 BOM для Excel
+    response.write('\ufeff')  # UTF-8 BOM для корректного отображения в Excel
+    writer = csv.writer(response, delimiter=';')
+    
+    # Заголовки (дата, время, гость, услуга, специалист, стоимость)
+    headers = [
+        'Дата',
+        'Время',
+        'Гость',
+        'Услуга',
+        'Специалист',
+        'Стоимость'
+    ]
+    writer.writerow(headers)
+    
+    total_cost = Decimal('0')
+    
+    # Данные
+    for booking in bookings_query:
+        local_start = timezone.localtime(booking.start_time)
+        cost = booking.service_variant.price
+        total_cost += cost
+        
+        row = [
+            local_start.strftime('%d.%m.%Y'),
+            local_start.strftime('%H:%M'),
+            booking.guest_name,  # Имя гостя
+            str(booking.service_variant),
+            booking.specialist.full_name,
+            str(cost).replace('.', ',')  # Замена точки на запятую для Excel
+        ]
+        writer.writerow(row)
+    
+    # Итоговая строка
+    writer.writerow([])  # Пустая строка
+    writer.writerow(['ИТОГО:', '', '', '', '', str(total_cost).replace('.', ',')])
+    
+    logger.info(f"Guest report downloaded: period={start} to {end}, guests={guest_names}, bookings={bookings_query.count()}")
     
     return response
 

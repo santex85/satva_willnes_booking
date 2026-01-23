@@ -14,6 +14,12 @@ import logging
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = False
 
+# WhiteNoise: serve static files via Django/Gunicorn (e.g. when nginx is unavailable)
+MIDDLEWARE = [
+    'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
+] + [m for m in MIDDLEWARE if m != 'django.middleware.security.SecurityMiddleware']
+
 # Allowed hosts
 ALLOWED_HOSTS = os.environ.get('DJANGO_ALLOWED_HOSTS', '').split(',')
 ALLOWED_HOSTS = [host.strip() for host in ALLOWED_HOSTS if host.strip()]
@@ -47,6 +53,7 @@ DATABASES = {
 # Static files для Docker
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 # Media files
 MEDIA_URL = '/media/'

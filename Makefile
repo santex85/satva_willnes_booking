@@ -1,4 +1,4 @@
-.PHONY: help build up down restart logs shell migrate createsuperuser collectstatic backup deploy deploy-full
+.PHONY: help build up down restart logs shell migrate createsuperuser collectstatic backup backup-safe restore restore-safe deploy deploy-full deploy-safe deploy-remote health-check
 
 help: ## Показать эту справку
 	@echo "Доступные команды:"
@@ -60,13 +60,27 @@ backup: ## Создать резервную копию базы данных
 	@docker compose exec -T db pg_dump -U postgres satva_wellness_booking | gzip > backups/db_$$(date +%Y%m%d_%H%M%S).sql.gz
 	@echo "Backup created in backups/"
 
+backup-safe: ## Создать резервную копию с проверкой целостности
+	@./scripts/backup_db.sh --verify
+
 restore: ## Восстановить базу данных из бэкапа (использовать: make restore FILE=backups/db_20240101_120000.sql.gz)
 	@if [ -z "$(FILE)" ]; then \
 		echo "Usage: make restore FILE=backups/db_YYYYMMDD_HHMMSS.sql.gz"; \
 		exit 1; \
 	fi
-	@docker compose exec -T db psql -U postgres satva_wellness_booking < $(FILE)
+	@if [[ "$(FILE)" == *.gz ]]; then \
+		gunzip -c $(FILE) | docker compose exec -T db psql -U postgres satva_wellness_booking; \
+	else \
+		docker compose exec -T db psql -U postgres satva_wellness_booking < $(FILE); \
+	fi
 	@echo "Database restored from $(FILE)"
+
+restore-safe: ## Безопасное восстановление базы данных (использовать: make restore-safe FILE=backups/db_20240101_120000.sql.gz)
+	@if [ -z "$(FILE)" ]; then \
+		echo "Usage: make restore-safe FILE=backups/db_YYYYMMDD_HHMMSS.sql.gz"; \
+		exit 1; \
+	fi
+	@./scripts/restore_db.sh $(FILE)
 
 clean: ## Очистить неиспользуемые Docker ресурсы
 	docker system prune -f
@@ -122,4 +136,32 @@ deploy-full: ## Полный деплой: git pull + deploy
 
 stats: ## Показать использование ресурсов контейнерами
 	docker stats
+
+deploy-safe: ## Безопасный деплой с автоматическим бэкапом и проверками
+	@./scripts/deploy_safe.sh
+
+deploy-safe-dry: ## Безопасный деплой в режиме проверки (без реальных изменений)
+	@./scripts/deploy_safe.sh --dry-run
+
+deploy-safe-interactive: ## Безопасный деплой с подтверждением каждого шага
+	@./scripts/deploy_safe.sh --interactive
+
+deploy-remote: ## Удаленный деплой на сервере через SSH (использовать: make deploy-remote SSH_KEY=~/.ssh/id_rsa SERVER=root@188.166.240.56)
+	@if [ -z "$(SSH_KEY)" ] || [ -z "$(SERVER)" ]; then \
+		echo "Usage: make deploy-remote SSH_KEY=~/.ssh/id_rsa SERVER=root@188.166.240.56"; \
+		exit 1; \
+	fi
+	@./scripts/deploy_remote.sh $(SSH_KEY) $(SERVER)
+
+health-check: ## Проверка работоспособности приложения
+	@./scripts/health_check.sh
+
+health-check-verbose: ## Проверка работоспособности с подробным выводом
+	@./scripts/health_check.sh --verbose
+
+test-deploy: ## Тестирование скриптов деплоя (безопасно, без изменений)
+	@./scripts/test_deploy.sh
+
+test-deploy-full: ## Полное тестирование скриптов деплоя (включая проверку функций)
+	@./scripts/test_deploy.sh --full
 

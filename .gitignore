@@ -67,6 +67,9 @@ Desktop.ini
 *.sql
 *.sql.gz
 
+# Server information reports (may contain sensitive data)
+server_info_*.md
+
 # Coverage reports
 htmlcov/
 .coverage

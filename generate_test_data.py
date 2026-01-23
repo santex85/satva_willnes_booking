@@ -15,12 +15,14 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
 django.setup()
 
 from django.contrib.auth.models import User, Group
+from django.db.models.signals import post_save
 from django.utils import timezone
 from django.utils.dateparse import parse_time
 from booking.models import (
     SystemSettings, CabinetType, Cabinet, Service,
     ServiceVariant, SpecialistProfile, SpecialistSchedule, Booking
 )
+import booking.signals as booking_signals
 
 def generate_test_data():
     print("=" * 60)
@@ -39,9 +41,13 @@ def generate_test_data():
     print("\n3. Создание графиков работы...")
     create_schedules(specialists)
     
-    # Создаем бронирования
+    # Создаем бронирования (отключаем email-сигнал на время генерации)
     print("\n4. Создание тестовых бронирований...")
-    create_bookings(specialists)
+    post_save.disconnect(booking_signals.send_booking_notification, sender=Booking)
+    try:
+        create_bookings(specialists)
+    finally:
+        post_save.connect(booking_signals.send_booking_notification, sender=Booking)
     
     print("\n" + "=" * 60)
     print("✓ Генерация тестовых данных завершена успешно!")
@@ -64,9 +70,10 @@ def init_basic_data():
     Group.objects.get_or_create(name='Admin')
     Group.objects.get_or_create(name='Specialist')
     
-    # Настройки системы
+    # Настройки системы (отключаем email при генерации тестовых данных)
     settings, _ = SystemSettings.objects.get_or_create()
     settings.buffer_time_minutes = 15
+    settings.send_email_notifications = False
     settings.save()
     
     # Типы кабинетов

@@ -1,8 +1,13 @@
 from django.contrib import admin
 from django.urls import path
-from django.shortcuts import render
+from django.shortcuts import render, redirect
 from django.contrib import messages
+from django.http import JsonResponse
+from django.views.decorators.http import require_http_methods
+from django.utils.html import format_html
+from django.db.models import Count
 from solo.admin import SingletonModelAdmin
+from booking.guest_utils import find_duplicate_groups, merge_guests, calculate_similarity
 from .models import (
     SystemSettings,
     CabinetType,
@@ -17,6 +22,7 @@ from .models import (
     CabinetClosure,
     DeletedBooking,
     BookingLog,
+    Guest,
 )
 
 
@@ -277,6 +283,149 @@ class BookingLogAdmin(admin.ModelAdmin):
     def has_change_permission(self, request, obj=None):
         """Запрещаем редактирование логов"""
         return False
+
+
+@admin.register(Guest)
+class GuestAdmin(admin.ModelAdmin):
+    """Admin для управления гостями"""
+    list_display = ('display_name', 'normalized_name', 'get_booking_count', 'created_at')
+    list_filter = ('created_at',)
+    search_fields = ('display_name', 'normalized_name')
+    readonly_fields = ('normalized_name', 'created_at', 'updated_at')
+    date_hierarchy = 'created_at'
+    ordering = ('normalized_name',)
+    
+    fieldsets = (
+        ('Основная информация', {
+            'fields': ('display_name', 'normalized_name')
+        }),
+        ('Системная информация', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def get_booking_count(self, obj):
+        """Количество бронирований"""
+        return obj.bookings.count()
+    get_booking_count.short_description = 'Бронирований'
+    get_booking_count.admin_order_field = 'bookings__count'
+    
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path(
+                'merge-duplicates/',
+                self.admin_site.admin_view(self.merge_duplicates_view),
+                name='booking_guest_merge_duplicates'
+            ),
+            path(
+                'merge-duplicates/execute/',
+                self.admin_site.admin_view(self.execute_merge),
+                name='booking_guest_execute_merge'
+            ),
+        ]
+        return custom_urls + urls
+    
+    def merge_duplicates_view(self, request):
+        """Страница для просмотра и выбора дублей для объединения"""
+        threshold = float(request.GET.get('threshold', 0.85))
+        
+        # Находим группы дублей
+        duplicate_groups = find_duplicate_groups(threshold=threshold)
+        
+        # Подготавливаем данные для шаблона
+        groups_data = []
+        for group in duplicate_groups:
+            primary = group['primary']
+            duplicates = group['duplicates']
+            
+            groups_data.append({
+                'primary': {
+                    'id': primary.id,
+                    'display_name': primary.display_name,
+                    'normalized_name': primary.normalized_name,
+                    'booking_count': primary.booking_count,
+                },
+                'duplicates': [
+                    {
+                        'id': dup.id,
+                        'display_name': dup.display_name,
+                        'normalized_name': dup.normalized_name,
+                        'booking_count': dup.booking_count,
+                        'similarity': calculate_similarity(primary.display_name, dup.display_name),
+                    }
+                    for dup in duplicates
+                ],
+                'total_bookings': group['total_bookings'],
+            })
+        
+        context = {
+            **self.admin_site.each_context(request),
+            'title': 'Объединение дублей гостей',
+            'groups': groups_data,
+            'threshold': threshold,
+            'total_groups': len(groups_data),
+            'opts': self.model._meta,
+            'has_view_permission': self.has_view_permission(request),
+        }
+        
+        return render(request, 'admin/booking/guest/merge_duplicates.html', context)
+    
+    @require_http_methods(["POST"])
+    def execute_merge(self, request):
+        """Выполняет объединение выбранных гостей"""
+        try:
+            import json
+            data = json.loads(request.body)
+            primary_id = data.get('primary_id')
+            duplicate_ids = data.get('duplicate_ids', [])
+            
+            if not primary_id or not duplicate_ids:
+                return JsonResponse({'success': False, 'error': 'Не указаны ID гостей'}, status=400)
+            
+            # Получаем гостей
+            try:
+                primary_guest = Guest.objects.get(id=primary_id)
+            except Guest.DoesNotExist:
+                return JsonResponse({'success': False, 'error': 'Основной гость не найден'}, status=404)
+            
+            duplicate_guests = Guest.objects.filter(id__in=duplicate_ids)
+            if duplicate_guests.count() != len(duplicate_ids):
+                return JsonResponse({'success': False, 'error': 'Некоторые гости-дубли не найдены'}, status=404)
+            
+            # Выполняем объединение
+            bookings_updated = merge_guests(primary_guest, list(duplicate_guests))
+            
+            return JsonResponse({
+                'success': True,
+                'message': f'Объединено {len(duplicate_ids)} гостей, перенесено {bookings_updated} бронирований'
+            })
+            
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)}, status=500)
+    
+    actions = ['merge_selected_guests']
+    
+    def merge_selected_guests(self, request, queryset):
+        """Действие для объединения выбранных гостей"""
+        if queryset.count() < 2:
+            messages.error(request, 'Выберите минимум 2 гостя для объединения')
+            return
+        
+        # Определяем основного гостя (с наибольшим количеством бронирований)
+        primary = queryset.annotate(booking_count=Count('bookings')).order_by('-booking_count').first()
+        duplicates = queryset.exclude(id=primary.id)
+        
+        bookings_updated = merge_guests(primary, list(duplicates))
+        
+        messages.success(
+            request,
+            f'Объединено {duplicates.count()} гостей с "{primary.display_name}". '
+            f'Перенесено {bookings_updated} бронирований.'
+        )
+    
+    merge_selected_guests.short_description = 'Объединить выбранных гостей'
 
 
 admin.site.register(SystemSettings, SingletonModelAdmin)

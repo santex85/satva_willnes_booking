@@ -396,6 +396,41 @@ class BookingSeries(models.Model):
         return occurrences
 
 
+class Guest(models.Model):
+    """Гость - нормализованная модель для работы с именами"""
+    normalized_name = models.CharField(
+        max_length=200,
+        unique=True,
+        db_index=True,
+        verbose_name='Нормализованное имя',
+        help_text='Имя для поиска и сравнения (автоматически нормализуется)'
+    )
+    display_name = models.CharField(
+        max_length=200,
+        verbose_name='Отображаемое имя',
+        help_text='Имя как его ввел пользователь (для отображения)'
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='Создано')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='Обновлено')
+
+    class Meta:
+        verbose_name = 'Гость'
+        verbose_name_plural = 'Гости'
+        ordering = ['normalized_name']
+        indexes = [
+            models.Index(fields=['normalized_name']),
+            models.Index(fields=['display_name']),
+        ]
+
+    def __str__(self):
+        return self.display_name
+
+    def get_booking_count(self):
+        """Количество бронирований у гостя"""
+        return self.bookings.count()
+    get_booking_count.short_description = 'Бронирований'
+
+
 class Booking(models.Model):
     """Бронирование"""
     STATUS_CHOICES = [
@@ -406,7 +441,20 @@ class Booking(models.Model):
         ('canceled', 'Отменено'),
     ]
 
-    guest_name = models.CharField(max_length=200, verbose_name='Имя гостя')
+    guest = models.ForeignKey(
+        Guest,
+        on_delete=models.PROTECT,
+        related_name='bookings',
+        null=True,
+        blank=True,
+        verbose_name='Гость',
+        help_text='Связанный гость (новая система)'
+    )
+    guest_name = models.CharField(
+        max_length=200,
+        verbose_name='Имя гостя',
+        help_text='Временное поле для обратной совместимости (deprecated)'
+    )
     guest_room_number = models.CharField(
         max_length=20,
         blank=True,
@@ -462,7 +510,8 @@ class Booking(models.Model):
         ordering = ['start_time']
 
     def __str__(self):
-        return f"{self.guest_name} - {self.service_variant} ({self.start_time})"
+        guest_display = self.guest.display_name if self.guest else (self.guest_name or 'Без имени')
+        return f"{guest_display} - {self.service_variant} ({self.start_time})"
 
     def save(self, *args, **kwargs):
         """Рассчитываем end_time автоматически"""

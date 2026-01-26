@@ -830,6 +830,33 @@
                 if (serviceVariantId && specialistId && startDatetime) {
                     loadAvailableCabinets();
                 }
+                
+                // Инициализируем автодополнение для поля имени гостя
+                const guestNameInput = document.getElementById('guest_name');
+                if (guestNameInput) {
+                    // Проверяем, что GuestAutocomplete доступен
+                    if (window.GuestAutocomplete && window.GuestAutocomplete.init) {
+                        // Удаляем предыдущую инициализацию, если есть
+                        if (guestNameInput._autocompleteInstance) {
+                            try {
+                                guestNameInput._autocompleteInstance.destroy();
+                            } catch (e) {
+                                console.warn('Error destroying autocomplete:', e);
+                            }
+                        }
+                        try {
+                            guestNameInput._autocompleteInstance = window.GuestAutocomplete.init(guestNameInput, {
+                                minLength: 2,
+                                delay: 300,
+                                limit: 10
+                            });
+                        } catch (e) {
+                            console.error('Error initializing autocomplete:', e);
+                        }
+                    } else {
+                        console.warn('GuestAutocomplete not available');
+                    }
+                }
             }, 100);
         };
         modalElement.addEventListener('shown.bs.modal', handleModalShown, { once: true });
@@ -848,6 +875,53 @@
                 hideQuickBookingModal();
             });
         }
+        
+        // Инициализируем автодополнение при открытии модального окна
+        modalElement.addEventListener('shown.bs.modal', function() {
+            // Небольшая задержка для полной инициализации модального окна
+            setTimeout(function() {
+                const guestNameInput = modalElement.querySelector('#guest_name');
+                if (guestNameInput) {
+                    // Проверяем доступность GuestAutocomplete
+                    if (typeof window.GuestAutocomplete !== 'undefined' && window.GuestAutocomplete && window.GuestAutocomplete.init) {
+                        // Удаляем предыдущую инициализацию, если есть
+                        if (guestNameInput._autocompleteInstance) {
+                            try {
+                                if (typeof guestNameInput._autocompleteInstance.destroy === 'function') {
+                                    guestNameInput._autocompleteInstance.destroy();
+                                }
+                            } catch (e) {
+                                console.warn('Error destroying autocomplete:', e);
+                            }
+                        }
+                        try {
+                            guestNameInput._autocompleteInstance = window.GuestAutocomplete.init(guestNameInput, {
+                                minLength: 2,
+                                delay: 300,
+                                limit: 10
+                            });
+                        } catch (e) {
+                            console.error('Error initializing autocomplete in modal:', e);
+                        }
+                    } else {
+                        // Пробуем еще раз через небольшую задержку
+                        setTimeout(function() {
+                            if (typeof window.GuestAutocomplete !== 'undefined' && window.GuestAutocomplete && window.GuestAutocomplete.init) {
+                                try {
+                                    guestNameInput._autocompleteInstance = window.GuestAutocomplete.init(guestNameInput, {
+                                        minLength: 2,
+                                        delay: 300,
+                                        limit: 10
+                                    });
+                                } catch (e) {
+                                    console.error('Error initializing autocomplete in modal (retry):', e);
+                                }
+                            }
+                        }, 500);
+                    }
+                }
+            }, 200);
+        });
     }
 
     function hideQuickBookingModal() {

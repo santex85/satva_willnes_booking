@@ -101,7 +101,7 @@
                         <div class="col-12 col-md-6">
                             <label for="guest_name" class="form-label">Имя гостя *</label>
                             <input type="text" class="form-control" name="guest_name" id="guest_name"
-                                   placeholder="Введите имя гостя" required>
+                                   placeholder="Введите имя гостя" required data-guest-autocomplete>
                         </div>
                         <div class="col-12 col-md-6">
                             <label for="guest_room_number" class="form-label">Номер комнаты</label>
@@ -139,6 +139,7 @@
 </style>
 
 {% load static %}
+<script src="{% static 'js/guest_autocomplete.js' %}"></script>
 <script src="{% static 'js/select_slot.js' %}"></script>
 {% endblock %}
 

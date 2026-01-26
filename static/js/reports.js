@@ -44,12 +44,12 @@
     }
 
     function toggleMergeButton() {
-        var btn = document.getElementById('reports-merge-btn');
+        var btnGroup = document.getElementById('reports-merge-btn-group');
         var cbs = document.querySelectorAll('.guest-merge-cb:checked');
-        if (btn) btn.style.display = cbs.length >= 2 ? 'inline-block' : 'none';
+        if (btnGroup) btnGroup.style.display = cbs.length >= 2 ? 'inline-block' : 'none';
     }
 
-    function mergeGuests() {
+    function mergeGuestsInReport() {
         var cbs = document.querySelectorAll('.guest-merge-cb:checked');
         if (cbs.length < 2) return;
         var names = Array.from(cbs).map(function(c) { return c.value; });
@@ -162,6 +162,150 @@
         toggleMergeButton();
     }
 
+    function mergeGuestsInDB() {
+        var cbs = document.querySelectorAll('.guest-merge-cb:checked');
+        if (cbs.length < 2) {
+            alert('Выберите минимум 2 гостя для объединения');
+            return;
+        }
+        
+        var names = Array.from(cbs).map(function(c) { return c.value; });
+        
+        // Заполняем список гостей в модальном окне
+        var listEl = document.getElementById('merge-guests-list');
+        if (listEl) {
+            listEl.innerHTML = '';
+            names.forEach(function(name, index) {
+                var li = document.createElement('li');
+                li.className = 'list-group-item d-flex justify-content-between align-items-center';
+                li.innerHTML = '<span>' + escapeHtml(name) + '</span>';
+                if (index === 0) {
+                    var badge = document.createElement('span');
+                    badge.className = 'badge bg-primary';
+                    badge.textContent = 'Основной (больше бронирований)';
+                    li.appendChild(badge);
+                }
+                listEl.appendChild(li);
+            });
+        }
+        
+        // Заполняем опции выбора имени
+        var nameOptionsEl = document.getElementById('primary-name-options');
+        if (nameOptionsEl) {
+            nameOptionsEl.innerHTML = '';
+            names.forEach(function(name, index) {
+                var label = document.createElement('label');
+                label.className = 'list-group-item';
+                label.style.cursor = 'pointer';
+                
+                var input = document.createElement('input');
+                input.type = 'radio';
+                input.name = 'primary-name';
+                input.value = name;
+                input.className = 'form-check-input me-2';
+                input.checked = index === 0; // Первый по умолчанию
+                
+                var text = document.createElement('span');
+                text.textContent = name;
+                if (index === 0) {
+                    var small = document.createElement('small');
+                    small.className = 'text-muted ms-2';
+                    small.textContent = '(рекомендуется)';
+                    text.appendChild(small);
+                }
+                
+                label.appendChild(input);
+                label.appendChild(text);
+                nameOptionsEl.appendChild(label);
+            });
+        }
+        
+        // Показываем модальное окно
+        var modal = new bootstrap.Modal(document.getElementById('mergeGuestsDbModal'));
+        modal.show();
+        
+        // Обработчик подтверждения
+        var confirmBtn = document.getElementById('confirm-merge-db-btn');
+        if (confirmBtn) {
+            // Удаляем старые обработчики
+            var newConfirmBtn = confirmBtn.cloneNode(true);
+            confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
+            
+            newConfirmBtn.addEventListener('click', function() {
+                // Получаем выбранное имя
+                var selectedNameInput = document.querySelector('input[name="primary-name"]:checked');
+                var selectedName = selectedNameInput ? selectedNameInput.value : names[0];
+                
+                performMergeInDB(names, selectedName, modal);
+            });
+        }
+    }
+    
+    function performMergeInDB(guestNames, primaryDisplayName, modal) {
+        var confirmBtn = document.getElementById('confirm-merge-db-btn');
+        if (confirmBtn) {
+            confirmBtn.disabled = true;
+            confirmBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Объединение...';
+        }
+        
+        // Получаем CSRF token
+        function getCookie(name) {
+            var cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                var cookies = document.cookie.split(';');
+                for (var i = 0; i < cookies.length; i++) {
+                    var cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+        
+        var csrftoken = getCookie('csrftoken');
+        
+        fetch('/reports/merge-guests-db/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrftoken
+            },
+            body: JSON.stringify({
+                guest_names: guestNames,
+                primary_display_name: primaryDisplayName
+            })
+        })
+        .then(function(response) {
+            return response.json();
+        })
+        .then(function(data) {
+            if (data.success) {
+                modal.hide();
+                // Показываем сообщение об успехе
+                alert(data.message || 'Гости успешно объединены');
+                // Перезагружаем страницу для обновления данных
+                window.location.reload();
+            } else {
+                // Показываем ошибку
+                alert('Ошибка: ' + (data.error || 'Неизвестная ошибка'));
+                if (confirmBtn) {
+                    confirmBtn.disabled = false;
+                    confirmBtn.innerHTML = '<i class="bi bi-database"></i> Объединить в БД';
+                }
+            }
+        })
+        .catch(function(error) {
+            console.error('Error merging guests:', error);
+            alert('Ошибка при объединении гостей: ' + error.message);
+            if (confirmBtn) {
+                confirmBtn.disabled = false;
+                confirmBtn.innerHTML = '<i class="bi bi-database"></i> Объединить в БД';
+            }
+        });
+    }
+
     function setupAccordionChevrons() {
         document.addEventListener('show.bs.collapse', function(e) {
             if (!e.target || !e.target.id) return;
@@ -191,8 +335,23 @@
             if (e.target && e.target.classList.contains('guest-merge-cb')) toggleMergeButton();
         });
 
-        var mergeBtn = document.getElementById('reports-merge-btn');
-        if (mergeBtn) mergeBtn.addEventListener('click', mergeGuests);
+        // Обработчик для объединения в отчете
+        var mergeInReportBtn = document.getElementById('merge-in-report-btn');
+        if (mergeInReportBtn) {
+            mergeInReportBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                mergeGuestsInReport();
+            });
+        }
+
+        // Обработчик для объединения в БД
+        var mergeInDbBtn = document.getElementById('merge-in-db-btn');
+        if (mergeInDbBtn) {
+            mergeInDbBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                mergeGuestsInDB();
+            });
+        }
 
         toggleMergeButton();
         setupAccordionChevrons();

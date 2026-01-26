@@ -41,6 +41,7 @@ urlpatterns = [
     path('reports/', views.reports_view, name='reports'),
     path('reports/download/', views.download_report_view, name='download_report'),
     path('reports/download-guest/', views.download_guest_report_view, name='download_guest_report'),
+    path('reports/merge-guests-db/', views.merge_guests_in_db_view, name='merge_guests_in_db'),
     path('my-schedule/', views.my_schedule_view, name='my_schedule'),
     
     # Deleted bookings
@@ -51,6 +52,7 @@ urlpatterns = [
     
     # API endpoints
     path('api/v1/my-schedule/', api_views.MyScheduleAPI.as_view(), name='api_my_schedule'),
+    path('api/v1/guests/autocomplete/', api_views.guest_autocomplete_view, name='api_guest_autocomplete'),
     path('api/v1/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/v1/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
 ]

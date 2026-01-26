@@ -28,6 +28,8 @@ from .models import (
     CabinetClosure,
     SystemSettings,
     DeletedBooking,
+    BookingLog,
+    Guest,
 )
 from .decorators import admin_required, specialist_required, staff_required
 from .utils import find_available_slots, check_booking_conflicts
@@ -1828,9 +1830,14 @@ def reports_view(request):
                 'total_duration_minutes': minutes
             })
 
-        # Статистика по гостям (группировка по точному совпадению guest_name)
+        # Статистика по гостям (группировка по Guest модели, с fallback на guest_name)
         try:
-            guest_stats_qs = bookings_filter.values('guest_name').annotate(
+            # Разделяем бронирования на две группы: с guest и без guest
+            bookings_with_guest = bookings_filter.filter(guest__isnull=False)
+            bookings_without_guest = bookings_filter.filter(guest__isnull=True)
+            
+            # Группируем по guest для бронирований с Guest
+            guest_stats_with_guest = bookings_with_guest.values('guest').annotate(
                 visit_count=Count('id'),
                 total_amount=Sum('service_variant__price'),
                 total_duration=Sum('service_variant__duration_minutes'),
@@ -1838,16 +1845,42 @@ def reports_view(request):
                 last_visit=Max('start_time'),
                 room_number=Max('guest_room_number'),
             ).order_by('-total_amount')
-
-            # Список уникальных услуг по гостям: (guest_name, service_name)
+            
+            # Группируем по guest_name для бронирований без Guest (старые данные)
+            guest_stats_without_guest = bookings_without_guest.values('guest_name').annotate(
+                visit_count=Count('id'),
+                total_amount=Sum('service_variant__price'),
+                total_duration=Sum('service_variant__duration_minutes'),
+                first_visit=Min('start_time'),
+                last_visit=Max('start_time'),
+                room_number=Max('guest_room_number'),
+            ).order_by('-total_amount')
+            
+            # Получаем Guest объекты
+            guest_ids = [item['guest'] for item in guest_stats_with_guest]
+            guests_dict = {g.id: g for g in Guest.objects.filter(id__in=guest_ids).select_related()}
+            
+            # Список уникальных услуг по гостям
             services_per_guest = defaultdict(list)
-            for row in bookings_filter.values_list('guest_name', 'service_variant__service__name').distinct():
-                gname, sname = row[0], row[1]
-                if sname and sname not in services_per_guest[gname]:
-                    services_per_guest[gname].append(sname)
+            for booking in bookings_filter.select_related('guest', 'service_variant__service'):
+                if booking.guest:
+                    guest_key = booking.guest.id
+                else:
+                    guest_key = f"name_{booking.guest_name}"  # Префикс для различения
+                
+                service_name = booking.service_variant.service.name if booking.service_variant else None
+                if service_name and service_name not in services_per_guest[guest_key]:
+                    services_per_guest[guest_key].append(service_name)
 
             guest_statistics = []
-            for item in guest_stats_qs:
+            
+            # Обрабатываем гостей с Guest записью
+            for item in guest_stats_with_guest:
+                guest_id = item['guest']
+                guest_obj = guests_dict.get(guest_id)
+                if not guest_obj:
+                    continue
+                
                 minutes = item.get('total_duration') or 0
                 if minutes >= 60:
                     hours = minutes // 60
@@ -1868,8 +1901,20 @@ def reports_view(request):
                 first_local = timezone.localtime(first) if first else None
                 last_local = timezone.localtime(last) if last else None
 
+                # Собираем все варианты имен для этого гостя (для индикации объединения)
+                name_variants = set(
+                    bookings_filter.filter(guest=guest_obj)
+                    .values_list('guest_name', flat=True)
+                    .distinct()
+                )
+                name_variants.add(guest_obj.display_name)
+                
                 guest_statistics.append({
-                    'guest_name': item['guest_name'],
+                    'guest_name': guest_obj.display_name,
+                    'guest_id': guest_id,
+                    'guest_obj': guest_obj,
+                    'name_variants': sorted(name_variants) if len(name_variants) > 1 else None,
+                    'is_merged': len(name_variants) > 1,
                     'room_number': (item.get('room_number') or '').strip() or None,
                     'visit_count': count,
                     'total_amount': total,
@@ -1878,18 +1923,72 @@ def reports_view(request):
                     'total_duration_display': duration_display,
                     'first_visit': first_local,
                     'last_visit': last_local,
-                    'services': sorted(services_per_guest.get(item['guest_name'], [])),
+                    'services': sorted(services_per_guest.get(guest_id, [])),
                 })
+            
+            # Обрабатываем гостей без Guest записи (старые данные)
+            for item in guest_stats_without_guest:
+                minutes = item.get('total_duration') or 0
+                if minutes >= 60:
+                    hours = minutes // 60
+                    remaining_minutes = minutes % 60
+                    if remaining_minutes:
+                        duration_display = f"{hours} ч {remaining_minutes} мин"
+                    else:
+                        duration_display = f"{hours} ч"
+                else:
+                    duration_display = f"{minutes} мин"
+
+                total = item.get('total_amount') or Decimal('0')
+                count = item.get('visit_count') or 0
+                avg_check = (total / count) if count else Decimal('0')
+
+                first = item.get('first_visit')
+                last = item.get('last_visit')
+                first_local = timezone.localtime(first) if first else None
+                last_local = timezone.localtime(last) if last else None
+
+                guest_name = item.get('guest_name') or 'Без имени'
+                guest_key = f"name_{guest_name}"
+
+                guest_statistics.append({
+                    'guest_name': guest_name,
+                    'guest_id': None,
+                    'guest_obj': None,
+                    'name_variants': None,
+                    'is_merged': False,
+                    'room_number': (item.get('room_number') or '').strip() or None,
+                    'visit_count': count,
+                    'total_amount': total,
+                    'avg_check': avg_check,
+                    'total_duration_minutes': minutes,
+                    'total_duration_display': duration_display,
+                    'first_visit': first_local,
+                    'last_visit': last_local,
+                    'services': sorted(services_per_guest.get(guest_key, [])),
+                })
+            
+            # Сортируем по total_amount
+            guest_statistics.sort(key=lambda x: x['total_amount'], reverse=True)
 
             # Детали бронирований по каждому гостю (для аккордеона)
             guest_bookings = {}
             guest_bookings_js = {}
             for g in guest_statistics:
                 gname = g['guest_name']
-                bookings_qs = bookings_filter.filter(guest_name=gname).select_related(
-                    'service_variant', 'service_variant__service',
-                    'specialist', 'cabinet'
-                ).order_by('start_time')
+                guest_id = g.get('guest_id')
+                
+                # Фильтруем по guest (если есть) или по guest_name
+                if guest_id:
+                    bookings_qs = bookings_filter.filter(guest_id=guest_id).select_related(
+                        'service_variant', 'service_variant__service',
+                        'specialist', 'cabinet', 'guest'
+                    ).order_by('start_time')
+                else:
+                    bookings_qs = bookings_filter.filter(guest_name=gname).select_related(
+                        'service_variant', 'service_variant__service',
+                        'specialist', 'cabinet'
+                    ).order_by('start_time')
                 blist = [
                     {
                         'id': b.id,
@@ -2116,6 +2215,121 @@ def download_guest_report_view(request):
     writer.writerow(['ИТОГО:', '', '', '', '', str(total_cost).replace('.', ',')])
     
     logger.info(f"Guest report downloaded: period={start} to {end}, guests={guest_names}, bookings={bookings_query.count()}")
+
+
+@admin_required
+def merge_guests_in_db_view(request):
+    """
+    API endpoint для объединения гостей в базе данных из отчетов.
+    
+    Принимает список имен гостей (guest_name) и объединяет их в одного гостя.
+    """
+    from .guest_utils import normalize_guest_name, merge_guests
+    import json
+    
+    logger = logging.getLogger(__name__)
+    
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Только POST запросы'}, status=405)
+    
+    try:
+        data = json.loads(request.body)
+        guest_names = data.get('guest_names', [])
+        
+        if not guest_names or not isinstance(guest_names, list) or len(guest_names) < 2:
+            return JsonResponse({
+                'success': False,
+                'error': 'Необходимо указать минимум 2 имени гостя для объединения'
+            }, status=400)
+        
+        # Находим Guest записи по именам
+        guest_objects = []
+        not_found_names = []
+        
+        for guest_name in guest_names:
+            if not guest_name or not isinstance(guest_name, str):
+                continue
+            
+            normalized = normalize_guest_name(guest_name.strip())
+            if not normalized:
+                continue
+            
+            try:
+                # Ищем по normalized_name
+                guest = Guest.objects.get(normalized_name=normalized)
+                guest_objects.append(guest)
+            except Guest.DoesNotExist:
+                # Если не найден, пытаемся найти по display_name
+                try:
+                    guest = Guest.objects.get(display_name=guest_name.strip())
+                    guest_objects.append(guest)
+                except Guest.DoesNotExist:
+                    not_found_names.append(guest_name)
+        
+        if len(guest_objects) < 2:
+            return JsonResponse({
+                'success': False,
+                'error': f'Не найдено достаточно гостей для объединения. Найдено: {len(guest_objects)}, не найдено: {len(not_found_names)}',
+                'not_found': not_found_names
+            }, status=400)
+        
+        # Определяем основного гостя (с наибольшим количеством бронирований)
+        guest_with_counts = []
+        for guest in guest_objects:
+            booking_count = Booking.objects.filter(guest=guest).count()
+            guest_with_counts.append((guest, booking_count))
+        
+        # Сортируем по количеству бронирований (убывание)
+        guest_with_counts.sort(key=lambda x: x[1], reverse=True)
+        primary_guest = guest_with_counts[0][0]
+        duplicate_guests = [g for g, _ in guest_with_counts[1:]]
+        
+        # Получаем выбранное имя (если указано)
+        primary_display_name = data.get('primary_display_name')
+        if not primary_display_name or not primary_display_name.strip():
+            # Если не указано, используем имя основного гостя
+            primary_display_name = primary_guest.display_name
+        
+        # Выполняем объединение
+        try:
+            with transaction.atomic():
+                bookings_updated = merge_guests(primary_guest, duplicate_guests, primary_display_name)
+                
+                # Логируем действие
+                logger.info(
+                    f"User {request.user.username} merged {len(duplicate_guests)} guests into {primary_guest.display_name}. "
+                    f"Bookings updated: {bookings_updated}"
+                )
+                
+                return JsonResponse({
+                    'success': True,
+                    'message': f'Успешно объединено {len(duplicate_guests)} гостей с "{primary_guest.display_name}". Перенесено {bookings_updated} бронирований.',
+                    'primary_guest': {
+                        'id': primary_guest.id,
+                        'display_name': primary_guest.display_name,
+                    },
+                    'merged_count': len(duplicate_guests),
+                    'bookings_updated': bookings_updated,
+                    'not_found': not_found_names if not_found_names else None
+                })
+        except Exception as e:
+            logger.error(f"Error merging guests: {e}", exc_info=True)
+            return JsonResponse({
+                'success': False,
+                'error': f'Ошибка при объединении гостей: {str(e)}'
+            }, status=500)
+            
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'success': False,
+            'error': 'Неверный формат JSON'
+        }, status=400)
+    except Exception as e:
+        logger.error(f"Unexpected error in merge_guests_in_db_view: {e}", exc_info=True)
+        return JsonResponse({
+            'success': False,
+            'error': f'Неожиданная ошибка: {str(e)}'
+        }, status=500)
     
     return response
 

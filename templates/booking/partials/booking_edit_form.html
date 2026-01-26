@@ -1,11 +1,12 @@
 {% load i18n %}
+{% load booking_filters %}
 <form method="POST" action="{{ form_action|default:'' }}" class="booking-edit-form" data-booking-id="{{ booking.id }}" data-validate-url="{{ validate_url }}" data-logs-url="{{ logs_url }}" data-available-cabinets-url="{{ available_cabinets_url }}" data-specialists-url="{{ specialists_url }}" {% if submit_via_ajax %}data-ajax="true"{% endif %}>
     {% csrf_token %}
 
     <div class="row g-3 mb-3">
         <div class="col-12 col-md-6">
             {{ form.guest_name.label_tag }}
-            {{ form.guest_name }}
+            {{ form.guest_name|add_attr:"data-guest-autocomplete" }}
             {% if form.guest_name.errors %}
                 <div class="text-danger">{{ form.guest_name.errors }}</div>
             {% endif %}

@@ -65,3 +65,20 @@ def format_iso_time(value):
     except (ValueError, AttributeError, TypeError):
         return str(value)
 
+
+@register.filter
+def add_attr(field, css):
+    """
+    Добавляет атрибут к полю формы.
+    Пример: {{ form.guest_name|add_attr:"data-guest-autocomplete" }}
+    """
+    attrs = {}
+    if css:
+        # Поддерживаем формат "attr=value" или просто "attr"
+        if '=' in css:
+            key, value = css.split('=', 1)
+            attrs[key.strip()] = value.strip()
+        else:
+            attrs[css.strip()] = True
+    return field.as_widget(attrs=attrs)
+

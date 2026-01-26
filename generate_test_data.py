@@ -20,8 +20,9 @@ from django.utils import timezone
 from django.utils.dateparse import parse_time
 from booking.models import (
     SystemSettings, CabinetType, Cabinet, Service,
-    ServiceVariant, SpecialistProfile, SpecialistSchedule, Booking
+    ServiceVariant, SpecialistProfile, SpecialistSchedule, Booking, Guest
 )
+from booking.guest_utils import normalize_guest_name
 import booking.signals as booking_signals
 
 def generate_test_data():
@@ -56,6 +57,7 @@ def generate_test_data():
     print(f"  - Специалистов: {SpecialistProfile.objects.count()}")
     print(f"  - Услуг: {Service.objects.count()}")
     print(f"  - Кабинетов: {Cabinet.objects.count()}")
+    print(f"  - Гостей: {Guest.objects.count()}")
     print(f"  - Бронирований: {Booking.objects.count()}")
     print(f"  - Подтвержденных: {Booking.objects.filter(status='confirmed').count()}")
     print(f"  - Выполненных: {Booking.objects.filter(status='completed').count()}")
@@ -275,8 +277,11 @@ def create_bookings(specialists):
     start_date = today - timedelta(days=30)
     end_date = today + timedelta(days=14)
     
+    # Список имен гостей (включая варианты с дублями для тестирования)
     guest_names = [
-        'Иванов Иван', 'Петрова Мария', 'Сидоров Петр', 'Козлова Анна',
+        'Иванов Иван', 'ИВАН ИВАНОВ', 'иванов иван', 'Иван  Иванов',  # Дубли для теста
+        'Петрова Мария', 'ПЕТРОВА МАРИЯ', 'петрова мария',  # Дубли для теста
+        'Сидоров Петр', 'Козлова Анна',
         'Смирнов Алексей', 'Федорова Елена', 'Морозов Дмитрий', 'Новикова Ольга',
         'Волков Сергей', 'Лебедева Татьяна', 'Соколов Андрей', 'Павлова Юлия',
         'Попов Максим', 'Васильева Наталья', 'Семенов Игорь', 'Михайлова Екатерина',
@@ -359,12 +364,20 @@ def create_bookings(specialists):
                 # Будущие - все подтверждены
                 status = 'confirmed'
             
-            # Создаем бронирование
+            # Создаем или получаем гостя
             guest_name = random.choice(guest_names)
             guest_room = random.choice(room_numbers) if random.random() > 0.2 else ''
             
+            # Нормализуем имя и создаем/получаем Guest
+            normalized = normalize_guest_name(guest_name)
+            guest, _ = Guest.objects.get_or_create(
+                normalized_name=normalized,
+                defaults={'display_name': guest_name}
+            )
+            
             booking = Booking.objects.create(
-                guest_name=guest_name,
+                guest=guest,
+                guest_name=guest_name,  # Оставляем для обратной совместимости
                 guest_room_number=guest_room,
                 service_variant=service_variant,
                 specialist=specialist,

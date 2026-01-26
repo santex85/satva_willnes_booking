@@ -593,6 +593,16 @@
             }, 100);
         }
 
+        // Инициализация автодополнения для поля имени гостя
+        const guestNameInput = form.querySelector('#id_guest_name');
+        if (guestNameInput && window.GuestAutocomplete) {
+            window.GuestAutocomplete.init(guestNameInput, {
+                minLength: 2,
+                delay: 300,
+                limit: 10
+            });
+        }
+
         if (options && typeof options.onInit === 'function') {
             options.onInit(form);
         }
@@ -601,3 +611,5 @@
     global.initBookingEditForm = initBookingEditForm;
 })(window);
 </script>
+{% load static %}
+<script src="{% static 'js/guest_autocomplete.js' %}"></script>

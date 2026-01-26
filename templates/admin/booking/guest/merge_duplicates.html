@@ -1,0 +1,259 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block title %}Объединение дублей гостей | {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
+    &rsaquo; <a href="{% url 'admin:booking_guest_changelist' %}">Гости</a>
+    &rsaquo; Объединение дублей
+</div>
+{% endblock %}
+
+{% block content %}
+<h1>Объединение дублей гостей</h1>
+
+{% if not groups %}
+<div class="alert alert-info">
+    <strong>Дублей не найдено!</strong> Все имена гостей уникальны.
+</div>
+{% else %}
+<div class="alert alert-warning">
+    <strong>Найдено {{ total_groups }} групп потенциальных дублей</strong> (порог схожести: {{ threshold }})
+    <br>
+    <small>Выберите, какие гости должны быть объединены. Все бронирования от гостей-дублей будут перенесены к основному гостю.</small>
+</div>
+
+<form id="merge-form" method="post" action="{% url 'admin:booking_guest_execute_merge' %}">
+    {% csrf_token %}
+    
+    <div id="merge-groups">
+        {% for group in groups %}
+        <div class="merge-group" data-group-index="{{ forloop.counter0 }}">
+            <div class="card mb-3">
+                <div class="card-header bg-light">
+                    <h5 class="mb-0">
+                        <input type="checkbox" class="form-check-input group-checkbox" 
+                               data-group="{{ forloop.counter0 }}" 
+                               id="group-{{ forloop.counter0 }}">
+                        <label for="group-{{ forloop.counter0 }}" class="ms-2">
+                            Группа {{ forloop.counter }} ({{ group.total_bookings }} бронирований)
+                        </label>
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <strong class="text-primary">Основной гость:</strong>
+                            <div class="ms-3 mt-2">
+                                <div><strong>{{ group.primary.display_name }}</strong></div>
+                                <small class="text-muted">ID: {{ group.primary.id }} | Нормализованное: {{ group.primary.normalized_name }}</small>
+                                <div><span class="badge bg-info">{{ group.primary.booking_count }} бронирований</span></div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <strong class="text-warning">Гости-дубли:</strong>
+                            <div class="ms-3 mt-2">
+                                {% for dup in group.duplicates %}
+                                <div class="mb-2 p-2 border rounded">
+                                    <div>
+                                        <input type="checkbox" 
+                                               class="form-check-input duplicate-checkbox" 
+                                               name="duplicate_ids" 
+                                               value="{{ dup.id }}"
+                                               data-group="{{ forloop.parentloop.counter0 }}"
+                                               id="dup-{{ dup.id }}">
+                                        <label for="dup-{{ dup.id }}" class="ms-2">
+                                            <strong>{{ dup.display_name }}</strong>
+                                        </label>
+                                    </div>
+                                    <small class="text-muted ms-4">ID: {{ dup.id }} | Нормализованное: {{ dup.normalized_name }}</small>
+                                    <div class="ms-4">
+                                        <span class="badge bg-secondary">{{ dup.booking_count }} бронирований</span>
+                                        <span class="badge bg-warning">Схожесть: {{ dup.similarity|floatformat:0 }}%</span>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <input type="hidden" name="primary_id" value="{{ group.primary.id }}" data-group="{{ forloop.counter0 }}">
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    
+    <div class="fixed-bottom bg-white border-top p-3 shadow-sm" style="z-index: 1000;">
+        <div class="container-fluid">
+            <div class="row align-items-center">
+                <div class="col-md-8">
+                    <div id="merge-summary" class="text-muted">
+                        Выберите группы для объединения
+                    </div>
+                </div>
+                <div class="col-md-4 text-end">
+                    <button type="button" class="btn btn-secondary" onclick="window.location.href='{% url 'admin:booking_guest_changelist' %}'">
+                        Отмена
+                    </button>
+                    <button type="submit" class="btn btn-primary" id="merge-btn" disabled>
+                        Объединить выбранные
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</form>
+
+<script>
+(function() {
+    'use strict';
+    
+    var form = document.getElementById('merge-form');
+    var mergeBtn = document.getElementById('merge-btn');
+    var summary = document.getElementById('merge-summary');
+    
+    function updateSummary() {
+        var selectedGroups = [];
+        var totalDuplicates = 0;
+        var totalBookings = 0;
+        
+        document.querySelectorAll('.merge-group').forEach(function(groupEl) {
+            var groupIndex = groupEl.dataset.groupIndex;
+            var groupCheckbox = document.querySelector('.group-checkbox[data-group="' + groupIndex + '"]');
+            var primaryId = document.querySelector('input[name="primary_id"][data-group="' + groupIndex + '"]').value;
+            var duplicates = Array.from(groupEl.querySelectorAll('.duplicate-checkbox:checked'));
+            
+            if (duplicates.length > 0) {
+                var primaryName = groupEl.querySelector('.text-primary').nextElementSibling.querySelector('strong').textContent;
+                var duplicateNames = duplicates.map(function(cb) {
+                    return cb.closest('.border').querySelector('label strong').textContent;
+                });
+                
+                selectedGroups.push({
+                    primary: primaryName,
+                    duplicates: duplicateNames
+                });
+                
+                totalDuplicates += duplicates.length;
+                duplicates.forEach(function(cb) {
+                    var bookingCount = parseInt(cb.closest('.border').querySelector('.badge.bg-secondary').textContent);
+                    totalBookings += bookingCount || 0;
+                });
+            }
+        });
+        
+        if (selectedGroups.length === 0) {
+            summary.textContent = 'Выберите группы для объединения';
+            mergeBtn.disabled = true;
+        } else {
+            summary.innerHTML = '<strong>Будет объединено:</strong> ' + 
+                selectedGroups.length + ' групп, ' + 
+                totalDuplicates + ' гостей-дублей, ' +
+                totalBookings + ' бронирований';
+            mergeBtn.disabled = false;
+        }
+    }
+    
+    // Обработчики для чекбоксов групп
+    document.querySelectorAll('.group-checkbox').forEach(function(cb) {
+        cb.addEventListener('change', function() {
+            var groupIndex = this.dataset.group;
+            var duplicates = document.querySelectorAll('.duplicate-checkbox[data-group="' + groupIndex + '"]');
+            duplicates.forEach(function(dup) {
+                dup.checked = this.checked;
+            }.bind(this));
+            updateSummary();
+        });
+    });
+    
+    // Обработчики для чекбоксов дублей
+    document.querySelectorAll('.duplicate-checkbox').forEach(function(cb) {
+        cb.addEventListener('change', updateSummary);
+    });
+    
+    // Обработка отправки формы
+    form.addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        var groupsToMerge = [];
+        document.querySelectorAll('.merge-group').forEach(function(groupEl) {
+            var groupIndex = groupEl.dataset.groupIndex;
+            var primaryId = document.querySelector('input[name="primary_id"][data-group="' + groupIndex + '"]').value;
+            var duplicates = Array.from(groupEl.querySelectorAll('.duplicate-checkbox:checked'));
+            
+            if (duplicates.length > 0) {
+                groupsToMerge.push({
+                    primary_id: parseInt(primaryId),
+                    duplicate_ids: duplicates.map(function(cb) { return parseInt(cb.value); })
+                });
+            }
+        });
+        
+        if (groupsToMerge.length === 0) {
+            alert('Выберите хотя бы одного гостя-дубля для объединения');
+            return;
+        }
+        
+        if (!confirm('Вы уверены, что хотите объединить выбранных гостей? Это действие нельзя отменить.')) {
+            return;
+        }
+        
+        // Отправляем каждую группу отдельно
+        var promises = groupsToMerge.map(function(group) {
+            return fetch('{% url "admin:booking_guest_execute_merge" %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                },
+                body: JSON.stringify(group)
+            }).then(function(response) {
+                return response.json();
+            });
+        });
+        
+        Promise.all(promises).then(function(results) {
+            var successCount = results.filter(function(r) { return r.success; }).length;
+            var errorCount = results.length - successCount;
+            
+            if (errorCount === 0) {
+                alert('Успешно объединено ' + successCount + ' групп гостей');
+                window.location.reload();
+            } else {
+                alert('Объединено ' + successCount + ' групп, ошибок: ' + errorCount);
+                window.location.reload();
+            }
+        }).catch(function(error) {
+            alert('Ошибка при объединении: ' + error);
+        });
+    });
+    
+    updateSummary();
+})();
+</script>
+
+<style>
+.merge-group {
+    margin-bottom: 1rem;
+}
+.fixed-bottom {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+}
+body {
+    padding-bottom: 100px;
+}
+</style>
+{% endif %}
+
+<div class="mt-4">
+    <a href="{% url 'admin:booking_guest_changelist' %}" class="btn btn-secondary">
+        ← Вернуться к списку гостей
+    </a>
+</div>
+{% endblock %}

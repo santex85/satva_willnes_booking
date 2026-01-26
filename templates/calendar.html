@@ -268,7 +268,7 @@
 
                     <div class="mb-3">
                         <label for="guest_name" class="form-label">Имя гостя *</label>
-                        <input type="text" class="form-control" id="guest_name" name="guest_name" required>
+                        <input type="text" class="form-control" id="guest_name" name="guest_name" required data-guest-autocomplete>
                     </div>
 
                     <div class="mb-3">
@@ -474,6 +474,7 @@
 <script src="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.0/locales/ru.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/l10n/ru.js"></script>
+<script src="{% static 'js/guest_autocomplete.js' %}"></script>
 <script src="{% static 'js/calendar.js' %}"></script>
 {% endblock %}
 

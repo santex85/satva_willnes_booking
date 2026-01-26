@@ -122,9 +122,21 @@
         <div class="card mb-3 mb-md-4">
             <div class="card-header bg-primary text-white d-flex flex-wrap justify-content-between align-items-center gap-2">
                 <h4 class="mb-0 h5"><i class="bi bi-person-lines-fill"></i> Статистика по гостям</h4>
-                <button type="button" class="btn btn-light btn-sm" id="reports-merge-btn" style="display: none;">
-                    <i class="bi bi-people-fill"></i> Объединить выбранных
-                </button>
+                <div class="btn-group" id="reports-merge-btn-group" style="display: none;">
+                    <button type="button" class="btn btn-light btn-sm dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                        <i class="bi bi-people-fill"></i> Объединить выбранных
+                    </button>
+                    <ul class="dropdown-menu">
+                        <li><a class="dropdown-item" href="#" id="merge-in-report-btn">
+                            <i class="bi bi-eye"></i> Объединить в отчете
+                        </a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item text-danger" href="#" id="merge-in-db-btn">
+                            <i class="bi bi-database"></i> Объединить в БД
+                            <small class="d-block text-muted">Внимание: гость навсегда объединится</small>
+                        </a></li>
+                    </ul>
+                </div>
             </div>
             <div class="card-body">
                 {% if guest_statistics %}
@@ -157,6 +169,11 @@
                                     <div class="d-flex align-items-center gap-2">
                                         <button type="button" class="btn btn-link p-0 text-start text-decoration-none guest-accordion-btn flex-grow-1" data-bs-toggle="collapse" data-bs-target="#guest-detail-{{ forloop.counter }}" aria-expanded="false" aria-controls="guest-detail-{{ forloop.counter }}">
                                             {{ g.guest_name }}
+                                            {% if g.is_merged %}
+                                            <span class="badge bg-info ms-2" title="Объединенный гость (варианты имен: {{ g.name_variants|join:', ' }})">
+                                                <i class="bi bi-people"></i> Объединен
+                                            </span>
+                                            {% endif %}
                                             <i class="bi bi-chevron-down guest-chevron"></i>
                                         </button>
                                         <a href="{% url 'download_guest_report' %}?start_date={{ request.GET.start_date|default:'' }}&end_date={{ request.GET.end_date|default:'' }}&guest_names={{ g.guest_name|urlencode }}" class="btn btn-sm btn-success guest-download-btn" data-guest-name="{{ g.guest_name|escapejs }}" title="Скачать отчёт по гостю">
@@ -246,6 +263,52 @@
 {% endblock %}
 
 {% block extra_js %}
+
+<!-- Модальное окно подтверждения объединения в БД -->
+<div class="modal fade" id="mergeGuestsDbModal" tabindex="-1" aria-labelledby="mergeGuestsDbModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title" id="mergeGuestsDbModalLabel">
+                    <i class="bi bi-exclamation-triangle"></i> Объединение гостей в базе данных
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning">
+                    <strong>Внимание!</strong> Это действие необратимо. Гости будут объединены навсегда в базе данных.
+                </div>
+                <p>Вы собираетесь объединить следующих гостей:</p>
+                <ul id="merge-guests-list" class="list-group mb-3">
+                    <!-- Список гостей будет добавлен через JavaScript -->
+                </ul>
+                
+                <div class="mb-3 mt-3">
+                    <label for="primary-name-select" class="form-label">
+                        <strong>Выберите имя для объединенного гостя:</strong>
+                    </label>
+                    <div id="primary-name-options" class="list-group">
+                        <!-- Радио-кнопки будут добавлены через JavaScript -->
+                    </div>
+                    <small class="text-muted">
+                        <i class="bi bi-info-circle"></i> Это имя будет использоваться для всех бронирований объединенного гостя.
+                    </small>
+                </div>
+                
+                <p class="text-muted small">
+                    <i class="bi bi-info-circle"></i> Все бронирования от объединяемых гостей будут перенесены к основному гостю.
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                <button type="button" class="btn btn-danger" id="confirm-merge-db-btn">
+                    <i class="bi bi-database"></i> Объединить в БД
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script src="{% static 'js/reports.js' %}"></script>
 {% endblock %}
 

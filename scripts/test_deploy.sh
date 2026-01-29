@@ -155,7 +155,7 @@ if [ $TESTS_FAILED -eq 0 ]; then
     echo -e "${BLUE}Следующие шаги:${NC}"
     echo "  1. Запустите dry-run: make deploy-safe-dry"
     echo "  2. Протестируйте отдельные компоненты"
-    echo "  3. Прочитайте TESTING_DEPLOY_SCRIPTS.md для детального плана"
+    echo "  3. Прочитайте TESTING.md для детального плана"
     exit 0
 else
     echo -e "${RED}✗ Некоторые тесты провалены${NC}"

@@ -257,6 +257,7 @@ deploy_application() {
     
     # Применение миграций
     log_action INFO "Применение миграций базы данных..."
+    log_action INFO "Примечание: Миграция 0011_add_guest_model может занять несколько минут на больших БД"
     if ! docker compose exec web python manage.py migrate --noinput; then
         log_action ERROR "Ошибка при применении миграций"
         ROLLBACK_NEEDED=true
@@ -330,6 +331,25 @@ post_deployment_checks() {
         log_action WARNING "Есть непримененные миграции"
     else
         log_action SUCCESS "Все миграции применены"
+    fi
+    
+    # Проверка результатов миграции Guest (если миграция 0011 была применена)
+    log_action INFO "Проверка результатов миграции Guest..."
+    GUEST_COUNT=$(docker compose exec -T web python manage.py shell -c "from booking.models import Guest; print(Guest.objects.count())" 2>/dev/null | tail -1 | tr -d '\r\n' || echo "")
+    if [ -n "$GUEST_COUNT" ] && [ "$GUEST_COUNT" != "" ]; then
+        if [ "$GUEST_COUNT" -gt 0 ] 2>/dev/null; then
+            log_action SUCCESS "Миграция Guest: создано $GUEST_COUNT записей"
+            
+            # Дополнительная проверка связей
+            BOOKINGS_WITH_GUEST=$(docker compose exec -T web python manage.py shell -c "from booking.models import Booking; print(Booking.objects.filter(guest__isnull=False).count())" 2>/dev/null | tail -1 | tr -d '\r\n' || echo "")
+            if [ -n "$BOOKINGS_WITH_GUEST" ] && [ "$BOOKINGS_WITH_GUEST" != "" ]; then
+                log_action INFO "Бронирований связано с Guest: $BOOKINGS_WITH_GUEST"
+            fi
+        else
+            log_action WARNING "Миграция Guest: создано 0 записей (возможно, миграция еще не применялась или нет данных)"
+        fi
+    else
+        log_action WARNING "Миграция Guest: не удалось проверить количество записей"
     fi
     
     # Проверка логов на ошибки

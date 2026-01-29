@@ -639,6 +639,41 @@ docker compose up -d
 docker compose exec web python manage.py migrate
 ```
 
+**Важно: Миграция Guest Model**
+
+При обновлении до версии с моделью Guest будет применена миграция `0011_add_guest_model.py`. 
+
+**Особенности:**
+- Миграция может занять несколько минут на больших БД (зависит от количества бронирований)
+- Скрипт `deploy_safe.sh` автоматически создает бэкап перед применением миграций
+- Рекомендуется использовать `make deploy-safe` для безопасного деплоя
+
+**Проверка результатов миграции через Docker:**
+
+```bash
+# Вход в Django shell
+docker compose exec web python manage.py shell
+```
+
+В Django shell:
+
+```python
+from booking.models import Guest, Booking
+
+# Проверка количества созданных гостей
+print(f"Guests: {Guest.objects.count()}")
+
+# Проверка связей
+print(f"Bookings with guest: {Booking.objects.filter(guest__isnull=False).count()}")
+print(f"Bookings without guest: {Booking.objects.filter(guest__isnull=True).count()}")
+
+# Примеры гостей
+for guest in Guest.objects.all()[:5]:
+    print(f"  - {guest.display_name}")
+```
+
+Подробнее о миграции: [MIGRATION_RISK_ANALYSIS.md](../MIGRATION_RISK_ANALYSIS.md)
+
 ### Создание резервных копий БД
 
 ```bash

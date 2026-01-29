@@ -8,6 +8,7 @@ done
 echo "Database is ready!"
 
 echo "Running migrations..."
+echo "Note: Migration 0011_add_guest_model may take several minutes on large databases"
 python manage.py migrate --noinput
 
 echo "Collecting static files..."

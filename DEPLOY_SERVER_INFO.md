@@ -177,7 +177,6 @@ chmod 600 ~/.ssh/id_rsa
 ## Дополнительная документация
 
 - [Подробная инструкция](scripts/SERVER_INFO_COLLECTION.md)
-- [Быстрая справка](scripts/README_COLLECT_INFO.md)
 
 ## Следующие шаги
 

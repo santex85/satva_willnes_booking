@@ -170,6 +170,45 @@ python manage.py makemigrations
 python manage.py migrate
 ```
 
+**Важно: Миграция Guest Model (0011_add_guest_model.py)**
+
+При первом применении миграций после обновления кода будет выполнена миграция `0011_add_guest_model.py`, которая:
+- Создает новую таблицу `booking_guest` для нормализованного хранения имен гостей
+- Мигрирует данные из поля `guest_name` в модель `Guest`
+- Связывает существующие бронирования с записями гостей
+
+**Особенности миграции:**
+- Время выполнения зависит от количества бронирований в БД (может занять несколько минут на больших БД)
+- Рекомендуется создать бэкап БД перед применением (скрипт `deploy_safe.sh` делает это автоматически)
+- Миграция обратно совместима - поле `guest_name` остается в модели для совместимости
+
+**Проверка результатов миграции:**
+
+После применения миграций проверьте результаты:
+
+```bash
+python manage.py shell
+```
+
+В Django shell выполните:
+
+```python
+from booking.models import Guest, Booking
+
+# Проверка количества созданных гостей
+print(f"Guests created: {Guest.objects.count()}")
+
+# Проверка связей бронирований с гостями
+print(f"Bookings with guest: {Booking.objects.filter(guest__isnull=False).count()}")
+print(f"Bookings without guest: {Booking.objects.filter(guest__isnull=True).count()}")
+
+# Проверка примеров гостей
+for guest in Guest.objects.all()[:5]:
+    print(f"  - {guest.display_name} (normalized: {guest.normalized_name})")
+```
+
+Подробнее о рисках и особенностях миграции см. [MIGRATION_RISK_ANALYSIS.md](MIGRATION_RISK_ANALYSIS.md)
+
 ### 6. Создание суперпользователя
 
 ```bash

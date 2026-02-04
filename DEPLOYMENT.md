@@ -1,599 +1,299 @@
-# Инструкция по развертыванию Satva Wellness Booking System
+# Развертывание Satva Wellness Booking
+
+Единая инструкция по развертыванию: Docker (рекомендуется), безопасный деплой, откат и сбор информации с сервера.
 
 ## Оглавление
-1. [Системные требования](#системные-требования)
-2. [Установка зависимостей](#установка-зависимостей)
-3. [Настройка PostgreSQL](#настройка-postgresql)
-4. [Настройка Django проекта](#настройка-django-проекта)
-5. [Настройка Gunicorn](#настройка-gunicorn)
-6. [Настройка Nginx](#настройка-nginx)
-7. [Запуск системы](#запуск-системы)
-8. [Мониторинг и обслуживание](#мониторинг-и-обслуживание)
+
+1. [Быстрые команды и чек-лист](#быстрые-команды-и-чек-лист)
+2. [Локальное тестирование Docker](#локальное-тестирование-docker)
+3. [Подготовка сервера](#подготовка-сервера)
+4. [Настройка проекта и переменных окружения](#настройка-проекта-и-переменных-окружения)
+5. [Запуск контейнеров](#запуск-контейнеров)
+6. [Домен и SSL](#домен-и-ssl)
+7. [Безопасный деплой](#безопасный-деплой)
+8. [Откат](#откат)
+9. [Сбор информации с сервера](#сбор-информации-с-сервера)
+10. [Мониторинг и бэкапы](#мониторинг-и-бэкапы)
+11. [Troubleshooting](#troubleshooting)
+12. [Миграция Guest Model](#миграция-guest-model)
+13. [API](#api)
+14. [Развертывание без Docker (альтернатива)](#развертывание-без-docker-альтернатива)
 
 ---
 
-## Системные требования
+## Быстрые команды и чек-лист
 
-- **ОС**: Ubuntu 22.04 LTS или аналогичная Linux-система
-- **Python**: 3.12+
-- **База данных**: PostgreSQL 14+
-- **Веб-сервер**: Nginx
-- **WSGI сервер**: Gunicorn
+### Команды
+
+```bash
+# Безопасный деплой (рекомендуется)
+make deploy-safe
+make deploy-safe-interactive   # с подтверждением каждого шага
+make deploy-safe-dry          # проверка без деплоя
+
+# Удаленный деплой
+make deploy-remote SSH_KEY=~/.ssh/id_ed25519 SERVER=root@YOUR_SERVER_IP
+
+# Проверка и откат
+make health-check
+make health-check-verbose
+make rollback-info
+make rollback-quick           # откат к состоянию до последнего деплоя
+
+# БД
+make backup-safe
+make restore-safe FILE=backups/db_YYYYMMDD_HHMMSS.sql.gz
+```
+
+### Чек-лист перед деплоем
+
+- [ ] Бэкап БД (делается автоматически в `deploy_safe.sh`)
+- [ ] Проверен `.env`, доступность БД, свободное место (≥1GB)
+- [ ] Все контейнеры запущены
+- [ ] По возможности: `make deploy-safe-dry` и `make health-check`
 
 ---
 
-## Установка зависимостей
+## Локальное тестирование Docker
 
-### 1. Обновление системы
+**Требования:** Docker и Docker Compose. Порты 80 и 5432 свободны (или изменены в `docker-compose.yml`).
 
 ```bash
-sudo apt update
-sudo apt upgrade -y
+cp .env.example .env
+# Отредактируйте .env: DATABASE_HOST=db, DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1
+
+make build && make up
+make createsuperuser
+# Откройте http://localhost/
 ```
 
-### 2. Установка Python и pip
+**.env для локального теста (минимум):** `DJANGO_SECRET_KEY`, `DEBUG=False`, `DATABASE_*` (host=db), `DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1`, при необходимости пустые `EMAIL_*` и `SENTRY_DSN`.
+
+**Полезные команды:** `docker compose ps`, `docker compose logs -f web`, `make shell`, `docker compose exec web python manage.py migrate`.
+
+**Проблемы:** порт 80 занят — в `docker-compose.yml` у nginx задать `"8080:80"`; порт 5432 занят — у db задать `"5433:5432"`.
+
+---
+
+## Подготовка сервера
+
+### Digital Ocean Droplet
+
+- Образ: Ubuntu 22.04 LTS
+- Размер: минимум 2GB RAM, 1 vCPU
+- Аутентификация: SSH-ключ
+
+### Установка Docker
 
 ```bash
-sudo apt install python3.12 python3.12-venv python3-pip -y
+apt update && apt upgrade -y
+apt install -y apt-transport-https ca-certificates curl gnupg lsb-release
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+apt update && apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+docker --version && docker compose version
 ```
 
-### 3. Установка PostgreSQL
+### Клонирование проекта
 
 ```bash
-sudo apt install postgresql postgresql-contrib -y
-sudo systemctl start postgresql
-sudo systemctl enable postgresql
+cd /opt
+git clone https://github.com/santex85/satva_willnes_booking.git
+cd satva_willnes_booking
+mkdir -p nginx/ssl logs
 ```
 
 ---
 
-## Настройка PostgreSQL
-
-### 1. Создание базы данных и пользователя
+## Настройка проекта и переменных окружения
 
 ```bash
-sudo -u postgres psql
-```
-
-В консоли PostgreSQL выполните:
-
-```sql
-CREATE DATABASE satva_wellness_booking;
-CREATE USER postgres WITH PASSWORD 'your_secure_password';
-GRANT ALL PRIVILEGES ON DATABASE satva_wellness_booking TO postgres;
-ALTER USER postgres CREATEDB;
-\q
-```
-
-### 2. Настройка PostgreSQL для внешних подключений
-
-Отредактируйте `/etc/postgresql/14/main/postgresql.conf`:
-
-```conf
-listen_addresses = 'localhost'
-```
-
-И `/etc/postgresql/14/main/pg_hba.conf`:
-
-```conf
-local   all             all                                     peer
-host    all             all             127.0.0.1/32            md5
-```
-
-Перезапустите PostgreSQL:
-
-```bash
-sudo systemctl restart postgresql
-```
-
----
-
-## Настройка Django проекта
-
-### 1. Клонирование проекта
-
-```bash
-cd /var/www
-sudo git clone <your-repo-url> satva-wellness
-sudo chown -R $USER:$USER satva-wellness
-cd satva-wellness
-```
-
-### 2. Создание виртуального окружения
-
-```bash
-python3.12 -m venv venv
-source venv/bin/activate
-pip install --upgrade pip
-pip install -r requirements.txt
-```
-
-### 3. Настройка переменных окружения
-
-Создайте файл `.env` в корне проекта:
-
-```bash
+cp .env.example .env
 nano .env
 ```
 
-Добавьте:
+Основные переменные для production:
 
-```env
-DJANGO_SECRET_KEY=your-super-secret-key-here-generate-with-openssl
-DJANGO_DEBUG=False
-DATABASE_HOST=localhost
-DATABASE_PORT=5432
-DATABASE_NAME=satva_wellness_booking
-DATABASE_USER=postgres
-DATABASE_PASSWORD=your_secure_password
-```
+- `DJANGO_SECRET_KEY` — сгенерировать: `openssl rand -hex 32`
+- `DEBUG=False`
+- `DATABASE_NAME`, `DATABASE_USER`, `DATABASE_PASSWORD`, `DATABASE_HOST=db`, `DATABASE_PORT=5432`
+- `DJANGO_ALLOWED_HOSTS=your-domain.com,www.your-domain.com,SERVER_IP`
+- `EMAIL_*`, `DEFAULT_FROM_EMAIL`
+- После настройки SSL: `SECURE_SSL_REDIRECT=True`, `SESSION_COOKIE_SECURE=True`, `CSRF_COOKIE_SECURE=True`
+- По желанию: `SENTRY_DSN`
 
-**ВНИМАНИЕ**: Сгенерируйте SECRET_KEY командой:
-```bash
-openssl rand -hex 32
-```
+---
 
-### 4. Обновление settings.py
-
-Убедитесь, что в `config/settings.py`:
-
-- `DEBUG = os.environ.get('DJANGO_DEBUG', 'False') == 'True'`
-- `ALLOWED_HOSTS` содержит ваш домен
-- `DATABASES` использует переменные окружения
-- `STATIC_ROOT = BASE_DIR / 'staticfiles'`
-
-Пример обновления settings.py:
-
-```python
-import os
-
-DEBUG = os.environ.get('DJANGO_DEBUG', 'False') == 'True'
-
-ALLOWED_HOSTS = ['your-domain.com', 'www.your-domain.com']
-
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.environ.get('DATABASE_NAME', 'satva_wellness_booking'),
-        'USER': os.environ.get('DATABASE_USER', 'postgres'),
-        'PASSWORD': os.environ.get('DATABASE_PASSWORD', 'postgres'),
-        'HOST': os.environ.get('DATABASE_HOST', 'localhost'),
-        'PORT': os.environ.get('DATABASE_PORT', '5432'),
-    }
-}
-```
-
-### 5. Применение миграций
+## Запуск контейнеров
 
 ```bash
-python manage.py makemigrations
-python manage.py migrate
+docker compose build
+docker compose up -d
+docker compose ps
+docker compose exec web python manage.py createsuperuser
+# Опционально: docker compose exec web python manage.py shell < init_data.py
 ```
 
-**Важно: Миграция Guest Model (0011_add_guest_model.py)**
+Ожидаются контейнеры: `satva_wellness_db`, `satva_wellness_web`, `satva_wellness_nginx`.
 
-При первом применении миграций после обновления кода будет выполнена миграция `0011_add_guest_model.py`, которая:
-- Создает новую таблицу `booking_guest` для нормализованного хранения имен гостей
-- Мигрирует данные из поля `guest_name` в модель `Guest`
-- Связывает существующие бронирования с записями гостей
+---
 
-**Особенности миграции:**
-- Время выполнения зависит от количества бронирований в БД (может занять несколько минут на больших БД)
-- Рекомендуется создать бэкап БД перед применением (скрипт `deploy_safe.sh` делает это автоматически)
-- Миграция обратно совместима - поле `guest_name` остается в модели для совместимости
+## Домен и SSL
 
-**Проверка результатов миграции:**
+### DNS
 
-После применения миграций проверьте результаты:
+A-запись домена и www на IP сервера.
+
+### Let's Encrypt (Certbot на хосте)
+
+Сертификаты получают на хосте; nginx в Docker монтирует `/etc/letsencrypt`. Перед первым получением остановите nginx (чтобы порт 80 был свободен):
 
 ```bash
-python manage.py shell
+cd /opt/satva_willnes_booking   # или ваш путь к проекту
+docker compose stop nginx
+certbot certonly --standalone -d your-domain.com -d www.your-domain.com
+docker compose start nginx
 ```
 
-В Django shell выполните:
+В `nginx/nginx.conf` должны быть указаны пути к сертификатам (например `/etc/letsencrypt/live/your-domain.com/fullchain.pem` и `privkey.pem`).
 
-```python
-from booking.models import Guest, Booking
+### Автообновление сертификатов
 
-# Проверка количества созданных гостей
-print(f"Guests created: {Guest.objects.count()}")
-
-# Проверка связей бронирований с гостями
-print(f"Bookings with guest: {Booking.objects.filter(guest__isnull=False).count()}")
-print(f"Bookings without guest: {Booking.objects.filter(guest__isnull=True).count()}")
-
-# Проверка примеров гостей
-for guest in Guest.objects.all()[:5]:
-    print(f"  - {guest.display_name} (normalized: {guest.normalized_name})")
-```
-
-Подробнее о рисках и особенностях миграции см. [MIGRATION_RISK_ANALYSIS.md](MIGRATION_RISK_ANALYSIS.md)
-
-### 6. Создание суперпользователя
+При использовании Certbot в режиме `standalone` порт 80 должен быть свободен во время обновления. Cron (от root):
 
 ```bash
-python manage.py createsuperuser
+crontab -e
 ```
 
-### 7. Загрузка тестовых данных (опционально)
+Добавить (путь к проекту заменить при необходимости):
 
-```bash
-python manage.py shell < init_data.py
-```
-
-### 8. Сбор статических файлов
-
-```bash
-python manage.py collectstatic --noinput
+```cron
+0 3 * * * cd /opt/satva_willnes_booking && docker compose stop nginx && certbot renew --quiet --non-interactive && docker compose start nginx
 ```
 
 ---
 
-## Настройка Gunicorn
+## Безопасный деплой
 
-### 1. Установка Gunicorn
+Используйте `make deploy-safe` для production: автоматический бэкап БД, проверки до/после, откат при ошибках.
 
-```bash
-pip install gunicorn
-```
+### Фазы скрипта `scripts/deploy_safe.sh`
 
-### 2. Создание systemd сервиса
+1. **Подготовка:** проверка Docker, Git, места на диске, контейнеров, .env.
+2. **Бэкап:** pg_dump в `backups/db_*.sql.gz`, проверка целостности.
+3. **Деплой:** git pull, build web, migrate, collectstatic, docker compose up -d.
+4. **Проверка:** статус контейнеров, HTTP health check, БД, миграции, логи.
+5. **Откат при сбое:** восстановление БД из бэкапа, откат кода, перезапуск контейнеров.
 
-Создайте файл `/etc/systemd/system/satva-wellness.service`:
-
-```bash
-sudo nano /etc/systemd/system/satva-wellness.service
-```
-
-Добавьте:
-
-```ini
-[Unit]
-Description=Satva Wellness Booking Gunicorn Daemon
-After=network.target
-
-[Service]
-User=www-data
-Group=www-data
-WorkingDirectory=/var/www/satva-wellness
-Environment="PATH=/var/www/satva-wellness/venv/bin"
-EnvironmentFile=/var/www/satva-wellness/.env
-ExecStart=/var/www/satva-wellness/venv/bin/gunicorn \
-    --access-logfile - \
-    --workers 3 \
-    --bind unix:/var/www/satva-wellness/satva-wellness.sock \
-    config.wsgi:application
-
-[Install]
-WantedBy=multi-user.target
-```
-
-**ВАЖНО**: Замените пути на ваши актуальные!
-
-### 3. Запуск и автозапуск Gunicorn
+### Опции
 
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl start satva-wellness
-sudo systemctl enable satva-wellness
-sudo systemctl status satva-wellness
+./scripts/deploy_safe.sh [--dry-run] [--interactive] [--skip-backup]
 ```
+
+### Вспомогательные скрипты
+
+- **Бэкап:** `./scripts/backup_db.sh` (опции: `--verify`, `--keep-days=30`).
+- **Восстановление:** `./scripts/restore_db.sh backups/db_YYYYMMDD_HHMMSS.sql.gz` (по умолчанию с подтверждением).
+- **Проверка:** `./scripts/health_check.sh` и `./scripts/health_check.sh --verbose`.
+- **Удаленный деплой:** `./scripts/deploy_remote.sh SSH_KEY SERVER` (с опциями `--dry-run`, `--interactive`).
+
+Логи деплоя: `logs/deploy_YYYYMMDD_HHMMSS.log`.
 
 ---
 
-## Настройка Nginx
+## Откат
 
-### 1. Установка Nginx
-
-```bash
-sudo apt install nginx -y
-```
-
-### 2. Создание конфигурации
-
-Создайте файл `/etc/nginx/sites-available/satva-wellness`:
+После успешного деплоя состояние сохраняется в `deploy_state.json`. Быстрый откат к состоянию до последнего деплоя:
 
 ```bash
-sudo nano /etc/nginx/sites-available/satva-wellness
+make rollback-info    # информация о последнем деплое
+make rollback-quick   # откат с подтверждением
+./scripts/rollback_quick.sh --dry-run
+./scripts/rollback_quick.sh --confirm   # без подтверждения (опасно)
 ```
 
-Добавьте:
-
-```nginx
-server {
-    listen 80;
-    server_name your-domain.com www.your-domain.com;
-
-    client_max_body_size 10M;
-
-    location = /favicon.ico { access_log off; log_not_found off; }
-
-    location /static/ {
-        alias /var/www/satva-wellness/staticfiles/;
-    }
-
-    location /media/ {
-        alias /var/www/satva-wellness/media/;
-    }
-
-    location / {
-        include proxy_params;
-        proxy_pass http://unix:/var/www/satva-wellness/satva-wellness.sock;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-
-    error_page 500 502 503 504 /500.html;
-    location = /500.html {
-        root /var/www/satva-wellness/templates/;
-    }
-}
-```
-
-### 3. Активация конфигурации
-
-```bash
-sudo ln -s /etc/nginx/sites-available/satva-wellness /etc/nginx/sites-enabled/
-sudo nginx -t
-sudo systemctl restart nginx
-```
-
-### 4. Настройка SSL (Let's Encrypt)
-
-```bash
-sudo apt install certbot python3-certbot-nginx -y
-sudo certbot --nginx -d your-domain.com -d www.your-domain.com
-```
-
-Certbot автоматически обновит конфигурацию Nginx для HTTPS.
+Откат: бэкап текущей БД → checkout предыдущего commit → восстановление БД из бэкапа деплоя → перезапуск контейнеров. Работает только если деплой выполнялся через `deploy_safe.sh`.
 
 ---
 
-## Запуск системы
+## Сбор информации с сервера
 
-### Проверка статуса всех сервисов
-
-```bash
-sudo systemctl status satva-wellness
-sudo systemctl status nginx
-sudo systemctl status postgresql
-```
-
-### Перезапуск после изменений
+Перед деплоем можно сохранить конфигурацию сервера (только чтение, ничего не меняется):
 
 ```bash
-sudo systemctl restart satva-wellness
-sudo systemctl restart nginx
+./scripts/collect_server_info.sh ~/.ssh/id_ed25519 root@YOUR_SERVER_IP
 ```
+
+В корне проекта появится `server_info_YYYYMMDD_HHMMSS.md` с переменными окружения (имена без значений), docker-compose, nginx, БД, SSL, commit, cron, firewall. Отчеты не коммитить — могут содержать чувствительные данные. Подробности: [scripts/SERVER_INFO_COLLECTION.md](scripts/SERVER_INFO_COLLECTION.md).
 
 ---
 
-## Мониторинг и обслуживание
+## Мониторинг и бэкапы
 
 ### Логи
 
-**Gunicorn логи**:
 ```bash
-sudo journalctl -u satva-wellness -f
+docker compose logs -f
+docker compose logs -f web
+docker compose logs --tail=100 web
 ```
 
-**Nginx логи**:
-```bash
-tail -f /var/log/nginx/access.log
-tail -f /var/log/nginx/error.log
-```
+### Бэкапы БД
 
-**Django логи** (если настроены):
-```bash
-tail -f /var/www/satva-wellness/logs/django.log
-```
-
-### Резервное копирование базы данных
-
-Создайте скрипт `/usr/local/bin/backup-satva-db.sh`:
+Ручной бэкап:
 
 ```bash
-#!/bin/bash
-BACKUP_DIR="/backup/satva-wellness"
-mkdir -p $BACKUP_DIR
-DATE=$(date +%Y%m%d_%H%M%S)
-pg_dump -U postgres satva_wellness_booking > $BACKUP_DIR/backup_$DATE.sql
-find $BACKUP_DIR -name "backup_*.sql" -mtime +7 -delete
+docker compose exec db pg_dump -U postgres satva_wellness_booking | gzip > backup_$(date +%Y%m%d_%H%M%S).sql.gz
 ```
 
-Добавьте в cron:
-```bash
-sudo crontab -e
-```
+Автоматические бэкапы: скрипт в `/opt/backup.sh` (или аналог) с вызовом pg_dump через `docker compose exec -T db`, затем добавить в cron, например `0 2 * * * /opt/backup.sh`.
 
-Добавьте строку:
-```
-0 2 * * * /usr/local/bin/backup-satva-db.sh
-```
+### Рекомендации
 
-### Обновление кода
-
-```bash
-cd /var/www/satva-wellness
-git pull origin main
-source venv/bin/activate
-pip install -r requirements.txt
-python manage.py migrate
-python manage.py collectstatic --noinput
-sudo systemctl restart satva-wellness
-```
+- Мониторинг доступности (например Uptime Robot).
+- Firewall: `ufw allow 22/tcp && ufw allow 80/tcp && ufw allow 443/tcp && ufw enable`.
 
 ---
 
 ## Troubleshooting
 
-### "502 Bad Gateway"
+**Бэкап не создается:** проверить `docker compose ps db`, `df -h`, права на `backups/`.
 
-Проверьте:
-1. Запущен ли Gunicorn: `sudo systemctl status satva-wellness`
-2. Правильные ли права на socket: `ls -la /var/www/satva-wellness/satva-wellness.sock`
-3. Пользователь Nginx может читать файлы: `sudo chown -R www-data:www-data /var/www/satva-wellness`
+**Ошибки миграций:** `docker compose logs web`, `docker compose exec web python manage.py showmigrations`; при необходимости откат.
 
-### "Permission denied"
+**Контейнеры не запускаются:** `docker compose logs`, `docker compose config`; откат через скрипт при сбое деплоя.
 
-```bash
-sudo chown -R www-data:www-data /var/www/satva-wellness
-sudo chmod -R 755 /var/www/satva-wellness
-```
+**HTTP health check не проходит:** `docker compose ps nginx`, `docker compose logs nginx`, `docker compose exec nginx nginx -t`.
 
-### Проблемы с базой данных
+**502 Bad Gateway:** проверить, что web и nginx запущены, конфиг nginx корректен.
 
-```bash
-sudo -u postgres psql
-\l  # список баз данных
-\c satva_wellness_booking
-\dt  # список таблиц
-```
+**БД:** `docker compose exec web python manage.py dbshell`, `docker compose exec db pg_isready -U postgres`.
+
+**Статика:** `docker compose exec web python manage.py collectstatic --noinput` и перезапуск nginx.
+
+**Полная пересборка:** `docker compose down -v`, затем `docker compose build --no-cache && docker compose up -d` (осторожно: `-v` удалит данные БД).
 
 ---
 
-## Производительность
+## Миграция Guest Model
 
-### Оптимизация PostgreSQL
-
-Отредактируйте `/etc/postgresql/14/main/postgresql.conf`:
-
-```conf
-shared_buffers = 256MB
-effective_cache_size = 1GB
-maintenance_work_mem = 256MB
-checkpoint_completion_target = 0.9
-wal_buffers = 16MB
-default_statistics_target = 100
-random_page_cost = 1.1
-effective_io_concurrency = 200
-work_mem = 8MB
-min_wal_size = 1GB
-max_wal_size = 4GB
-```
-
-Перезапустите:
-```bash
-sudo systemctl restart postgresql
-```
-
-### Кэширование в Django
-
-Добавьте в `settings.py`:
-
-```python
-CACHES = {
-    'default': {
-        'BACKEND': 'django.core.cache.backends.redis.RedisCache',
-        'LOCATION': 'redis://127.0.0.1:6379/1',
-    }
-}
-```
-
-Установите Redis:
-```bash
-sudo apt install redis-server -y
-sudo systemctl enable redis-server
-```
+При первом применении миграций после обновления кода выполняется миграция `0011_add_guest_model.py`: создается таблица гостей, данные переносятся из `guest_name`. Время выполнения зависит от количества бронирований. `deploy_safe.sh` создает бэкап перед миграциями. Подробности и риски: [MIGRATION_RISK_ANALYSIS.md](MIGRATION_RISK_ANALYSIS.md).
 
 ---
 
-## Безопасность
+## API
 
-1. **Используйте HTTPS**: настройте SSL через Let's Encrypt
-2. **Измените SECRET_KEY**: используйте сильный ключ из переменной окружения
-3. **Ограничьте ALLOWED_HOSTS**: только ваши домены
-4. **Настройте файрвол**:
-```bash
-sudo ufw allow 22/tcp
-sudo ufw allow 80/tcp
-sudo ufw allow 443/tcp
-sudo ufw enable
-```
-5. **Регулярно обновляйте**: систему, Django, зависимости
+- **JWT:** `POST /api/v1/token/` с `username`, `password`; заголовок `Authorization: Bearer <access>`.
+- **Refresh:** `POST /api/v1/token/refresh/` с `refresh`.
+- **Расписание специалиста:** `GET /api/v1/my-schedule/` с Bearer-токеном.
 
 ---
 
-## Запуск с Production настройками
+## Развертывание без Docker (альтернатива)
 
-Используйте `settings_production.py` для production окружения:
+Вариант без контейнеров: Ubuntu 22.04, Python 3.12+, PostgreSQL 14+, Nginx, Gunicorn.
 
-```bash
-# Установите переменные окружения
-export DJANGO_SETTINGS_MODULE=config.settings_production
-export DJANGO_SECRET_KEY=$(openssl rand -hex 32)
-export DJANGO_ALLOWED_HOSTS=your-domain.com,www.your-domain.com
-export DATABASE_NAME=satva_wellness_booking
-export DATABASE_USER=postgres
-export DATABASE_PASSWORD=your_secure_password
-export DATABASE_HOST=localhost
-export DATABASE_PORT=5432
-export SENTRY_DSN=your_sentry_dsn_here  # Опционально
+Кратко: клонирование в `/var/www`, venv, `.env`, миграции, collectstatic, Gunicorn (unix socket), systemd-юнит для Gunicorn, Nginx как reverse proxy к сокету, статика и media через alias. SSL: `certbot --nginx -d domain`. Обновление: `git pull`, `pip install -r requirements.txt`, `migrate`, `collectstatic`, `systemctl restart satva-wellness nginx`.
 
-# Выполните миграции и соберите статические файлы
-python manage.py migrate
-python manage.py collectstatic --noinput
-
-# Запустите с Gunicorn
-gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3
-```
-
----
-
-## API Аутентификация
-
-Система поддерживает два метода аутентификации:
-1. **Session Authentication** - для веб-интерфейса
-2. **JWT Authentication** - для мобильных приложений и API клиентов
-
-### Получение JWT токена
-
-```bash
-curl -X POST http://your-domain.com/api/v1/token/ \
-  -H "Content-Type: application/json" \
-  -d '{"username": "specialist_user", "password": "password"}'
-```
-
-Response:
-```json
-{
-    "access": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
-    "refresh": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
-}
-```
-
-### Использование токена
-
-```bash
-curl http://your-domain.com/api/v1/my-schedule/ \
-  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
-```
-
-### Обновление токена
-
-```bash
-curl -X POST http://your-domain.com/api/v1/token/refresh/ \
-  -H "Content-Type: application/json" \
-  -d '{"refresh": "YOUR_REFRESH_TOKEN"}'
-```
-
-### API Endpoints
-
-| Endpoint | Method | Описание |
-|----------|--------|----------|
-| `/api/v1/token/` | POST | Получение JWT токена |
-| `/api/v1/token/refresh/` | POST | Обновление access токена |
-| `/api/v1/my-schedule/` | GET | Список бронирований специалиста |
-
----
-
-## Контакты и поддержка
-
-При возникновении проблем:
-1. Проверьте логи сервисов
-2. Убедитесь, что все сервисы запущены
-3. Проверьте права доступа к файлам и директориям
-4. Проверьте конфигурацию Nginx и Gunicorn
-
+Детали (PostgreSQL, Gunicorn, Nginx, бэкапы, производительность) при необходимости можно восстановить из истории репозитория; для нового развертывания рекомендуется Docker и разделы выше.

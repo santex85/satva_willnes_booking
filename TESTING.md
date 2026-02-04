@@ -1,5 +1,7 @@
 # Руководство по тестированию скриптов деплоя
 
+Команды деплоя и окружение описаны в [DEPLOYMENT.md](DEPLOYMENT.md).
+
 ## Быстрый старт
 
 ### Самый безопасный способ - автоматическое тестирование
@@ -151,8 +153,8 @@ docker compose exec web python manage.py shell < generate_test_data.py
 Если у вас есть staging окружение:
 
 ```bash
-# Деплой на staging сервер
-make deploy-remote SSH_KEY=~/.ssh/id_rsa SERVER=staging@staging.example.com --dry-run
+# Проверка без изменений (dry-run)
+./scripts/deploy_remote.sh ~/.ssh/id_rsa staging@staging.example.com --dry-run
 
 # Реальный деплой на staging
 make deploy-remote SSH_KEY=~/.ssh/id_rsa SERVER=staging@staging.example.com
@@ -219,9 +221,9 @@ docker compose up -d
 
 ```bash
 # Dry-run на staging
-make deploy-remote SSH_KEY=~/.ssh/id_rsa SERVER=staging@staging.example.com --dry-run
+./scripts/deploy_remote.sh ~/.ssh/id_rsa staging@staging.example.com --dry-run
 
-# Если все хорошо - реальный деплой на staging
+# Если все хорошо — реальный деплой на staging
 make deploy-remote SSH_KEY=~/.ssh/id_rsa SERVER=staging@staging.example.com
 ```
 

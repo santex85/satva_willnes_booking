@@ -1,207 +1,30 @@
 # Индекс документации проекта
 
+## Все документы
+
+| Файл | Назначение |
+|------|------------|
+| [README.md](../README.md) | Описание проекта, установка, первичная настройка, API |
+| [DEPLOYMENT.md](../DEPLOYMENT.md) | Развертывание: Docker, безопасный деплой, откат, SSL, бэкапы, сбор информации |
+| [CONTRIBUTING.md](../CONTRIBUTING.md) | Участие в проекте, окружение, стиль кода, коммиты |
+| [TESTING.md](../TESTING.md) | Тестирование скриптов деплоя (dry-run, бэкапы, health-check) |
+| [MIGRATION_RISK_ANALYSIS.md](../MIGRATION_RISK_ANALYSIS.md) | Риски и рекомендации по миграции Guest Model |
+| [scripts/SERVER_INFO_COLLECTION.md](../scripts/SERVER_INFO_COLLECTION.md) | Детали работы скрипта сбора информации с сервера |
+
 ## Быстрый доступ
 
-### Для начала работы
-- [README.md](../README.md) - Основная информация о проекте
-- [CONTRIBUTING.md](../CONTRIBUTING.md) - Руководство по участию в проекте
+- **Начало работы:** [README.md](../README.md), [CONTRIBUTING.md](../CONTRIBUTING.md)
+- **Деплой и операции:** [DEPLOYMENT.md](../DEPLOYMENT.md)
+- **Тестирование деплоя:** [TESTING.md](../TESTING.md)
+- **Миграция Guest:** [MIGRATION_RISK_ANALYSIS.md](../MIGRATION_RISK_ANALYSIS.md)
+- **Сбор информации с сервера:** [DEPLOYMENT.md](../DEPLOYMENT.md#сбор-информации-с-сервера), [scripts/SERVER_INFO_COLLECTION.md](../scripts/SERVER_INFO_COLLECTION.md)
 
-### Для развертывания
-- [DOCKER_DEPLOYMENT.md](../DOCKER_DEPLOYMENT.md) - Docker деплой (рекомендуется) ⭐
-- [DEPLOYMENT.md](../DEPLOYMENT.md) - Традиционный деплой (Gunicorn + Nginx)
-- [DEPLOY_SAFE.md](../DEPLOY_SAFE.md) - Безопасный деплой с бэкапами
-- [DEPLOYMENT_NOTES.md](../DEPLOYMENT_NOTES.md) - Краткие заметки и команды
+## Рекомендуемый порядок
 
-### Для операций
-- [ROLLBACK_QUICK.md](../ROLLBACK_QUICK.md) - Быстрый откат
-- [TESTING.md](../TESTING.md) - Тестирование скриптов деплоя
+**Деплой на production:** DEPLOYMENT.md → при первом использовании скриптов TESTING.md → при миграции Guest MIGRATION_RISK_ANALYSIS.md.
 
-### Для технических деталей
-- [MIGRATION_RISK_ANALYSIS.md](../MIGRATION_RISK_ANALYSIS.md) - Анализ миграции Guest Model
-- [DEPLOY_SERVER_INFO.md](../DEPLOY_SERVER_INFO.md) - Сбор информации с сервера
-- [scripts/SERVER_INFO_COLLECTION.md](../scripts/SERVER_INFO_COLLECTION.md) - Детали сбора информации
-
-## Структура документации
-
-### 1. Основная документация
-
-#### README.md
-Главный файл проекта с описанием, возможностями, установкой и быстрым стартом.
-
-**Когда использовать:** При первом знакомстве с проектом, для понимания общей структуры.
-
-#### CONTRIBUTING.md
-Руководство по участию в проекте, стиль кода, процесс коммитов.
-
-**Когда использовать:** При подготовке к внесению изменений в проект.
-
-### 2. Развертывание
-
-#### DOCKER_DEPLOYMENT.md ⭐ (Рекомендуется)
-Полная инструкция по развертыванию с использованием Docker и Docker Compose на Digital Ocean VPS.
-
-**Содержит:**
-- Локальное тестирование Docker
-- Подготовка сервера
-- Установка Docker
-- Настройка проекта
-- Настройка SSL
-- Мониторинг и обслуживание
-
-**Когда использовать:** При развертывании на production сервере с Docker.
-
-#### DEPLOYMENT.md
-Инструкция по традиционному развертыванию без Docker (Gunicorn + Nginx).
-
-**Содержит:**
-- Установка зависимостей
-- Настройка PostgreSQL
-- Настройка Gunicorn
-- Настройка Nginx
-- SSL сертификаты
-- API документация
-
-**Когда использовать:** При развертывании без Docker или на сервере без Docker.
-
-#### DEPLOY_SAFE.md
-Документация по безопасному деплою с автоматическими бэкапами, проверками и откатом.
-
-**Содержит:**
-- Описание скрипта безопасного деплоя
-- Фазы деплоя
-- Сценарии использования
-- Troubleshooting
-
-**Когда использовать:** При каждом production деплое для безопасности.
-
-#### DEPLOYMENT_NOTES.md
-Краткие заметки и быстрые команды для деплоя.
-
-**Содержит:**
-- Быстрые команды
-- Чек-лист перед деплоем
-- Полезные команды
-- Troubleshooting
-
-**Когда использовать:** Как справочник быстрых команд при деплое.
-
-### 3. Операции
-
-#### ROLLBACK_QUICK.md
-Механизм быстрого отката к предыдущему состоянию после деплоя.
-
-**Содержит:**
-- Как работает откат
-- Использование
-- Безопасность
-- Примеры
-
-**Когда использовать:** При необходимости быстро откатить изменения после деплоя.
-
-#### TESTING.md
-Руководство по безопасному тестированию скриптов деплоя.
-
-**Содержит:**
-- Уровни тестирования
-- Пошаговый план
-- Тестовые сценарии
-- Рекомендации
-
-**Когда использовать:** Перед первым использованием скриптов деплоя или при их изменении.
-
-### 4. Техническая документация
-
-#### MIGRATION_RISK_ANALYSIS.md
-Детальный анализ рисков миграции Guest Model (0011_add_guest_model.py).
-
-**Содержит:**
-- Обзор изменений
-- Детальный анализ рисков
-- Рекомендации
-- Процедура отката
-
-**Когда использовать:** Перед применением миграции Guest Model или при анализе проблем.
-
-#### DEPLOY_SERVER_INFO.md
-Инструкция по сбору информации с сервера перед деплоем.
-
-**Содержит:**
-- Быстрый старт
-- Что собирает скрипт
-- Использование информации
-- Troubleshooting
-
-**Когда использовать:** Перед деплоем для сохранения текущей конфигурации.
-
-#### scripts/SERVER_INFO_COLLECTION.md
-Подробная документация по скрипту сбора информации с сервера.
-
-**Содержит:**
-- Детальное описание
-- Что собирается
-- Формат отчета
-- Безопасность
-
-**Когда использовать:** Для понимания деталей работы скрипта сбора информации.
-
-## Рекомендуемый порядок изучения
-
-### Для нового разработчика
-
-1. [README.md](../README.md) - Общее понимание проекта
-2. [CONTRIBUTING.md](../CONTRIBUTING.md) - Как участвовать в проекте
-3. [DOCKER_DEPLOYMENT.md](../DOCKER_DEPLOYMENT.md) - Развертывание локально
-
-### Для деплоя на production
-
-1. [DEPLOY_SERVER_INFO.md](../DEPLOY_SERVER_INFO.md) - Собрать информацию с сервера
-2. [TESTING.md](../TESTING.md) - Протестировать скрипты
-3. [DEPLOY_SAFE.md](../DEPLOY_SAFE.md) - Изучить безопасный деплой
-4. [DOCKER_DEPLOYMENT.md](../DOCKER_DEPLOYMENT.md) - Выполнить деплой
-5. [ROLLBACK_QUICK.md](../ROLLBACK_QUICK.md) - Знать как откатить при проблемах
-
-### Для работы с миграциями
-
-1. [MIGRATION_RISK_ANALYSIS.md](../MIGRATION_RISK_ANALYSIS.md) - Изучить риски
-2. [DEPLOY_SAFE.md](../DEPLOY_SAFE.md) - Использовать безопасный деплой
-3. [TESTING.md](../TESTING.md) - Протестировать на staging
-
-## Поиск по темам
-
-### Деплой
-- Docker: [DOCKER_DEPLOYMENT.md](../DOCKER_DEPLOYMENT.md)
-- Традиционный: [DEPLOYMENT.md](../DEPLOYMENT.md)
-- Безопасный: [DEPLOY_SAFE.md](../DEPLOY_SAFE.md)
-- Команды: [DEPLOYMENT_NOTES.md](../DEPLOYMENT_NOTES.md)
-
-### Бэкапы и откат
-- Бэкапы: [DEPLOY_SAFE.md](../DEPLOY_SAFE.md) (раздел "Создание бэкапа")
-- Откат: [ROLLBACK_QUICK.md](../ROLLBACK_QUICK.md)
-- Восстановление: [DEPLOY_SAFE.md](../DEPLOY_SAFE.md) (раздел "Скрипт восстановления")
-
-### Тестирование
-- Общее: [TESTING.md](../TESTING.md)
-- Скрипты деплоя: [TESTING.md](../TESTING.md)
-- Health checks: [DEPLOYMENT_NOTES.md](../DEPLOYMENT_NOTES.md)
-
-### Миграции
-- Guest Model: [MIGRATION_RISK_ANALYSIS.md](../MIGRATION_RISK_ANALYSIS.md)
-- Применение: [DEPLOYMENT.md](../DEPLOYMENT.md) (раздел "Применение миграций")
-- Проверка: [DEPLOYMENT_NOTES.md](../DEPLOYMENT_NOTES.md)
-
-### Мониторинг
-- Логи: [DOCKER_DEPLOYMENT.md](../DOCKER_DEPLOYMENT.md) (раздел "Мониторинг")
-- Статус: [DEPLOYMENT_NOTES.md](../DEPLOYMENT_NOTES.md)
-- Health checks: [DEPLOYMENT_NOTES.md](../DEPLOYMENT_NOTES.md)
+**Поиск по темам:** деплой, Docker, бэкапы, откат, SSL — DEPLOYMENT.md; тесты деплоя — TESTING.md; миграция Guest — MIGRATION_RISK_ANALYSIS.md.
 
 ## Обновление документации
 
-При добавлении новой документации:
-1. Добавьте файл в соответствующую категорию
-2. Обновите этот индекс
-3. Добавьте ссылку в README.md
-4. Обновите DEPLOYMENT_NOTES.md если это касается деплоя
-
----
-
-**Последнее обновление:** 2026-01-29
+При добавлении или изменении функциональности деплоя, миграций или скриптов обновите соответствующий раздел в DEPLOYMENT.md или TESTING.md и при необходимости этот индекс.

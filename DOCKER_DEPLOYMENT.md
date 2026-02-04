@@ -582,16 +582,16 @@ docker compose restart nginx
 
 ### 4. Автоматическое обновление сертификатов
 
-Создайте cron задачу для обновления сертификатов:
+При использовании Certbot в режиме `standalone` (получение сертификата с хоста) порт 80 должен быть свободен во время обновления. Добавьте cron задачу, которая останавливает nginx, обновляет сертификат и снова запускает nginx:
 
 ```bash
 crontab -e
 ```
 
-Добавьте:
+Добавьте (замените `/opt/satva_willnes_booking` на путь к проекту на сервере):
 
 ```cron
-0 3 * * * certbot renew --quiet && docker compose restart nginx
+0 3 * * * cd /opt/satva_willnes_booking && docker compose stop nginx && certbot renew --quiet --non-interactive && docker compose start nginx
 ```
 
 ---

@@ -65,15 +65,14 @@ class MyScheduleAPI(generics.ListAPIView):
     
     def get_queryset(self):
         """
-        Возвращает все подтверждённые бронирования для текущего специалиста
+        Возвращает все бронирования для текущего специалиста (любой статус).
         """
         try:
             specialist = SpecialistProfile.objects.get(user=self.request.user)
             return Booking.objects.filter(
-                specialist=specialist,
-                status='confirmed'
+                specialist=specialist
             ).select_related(
-                'specialist', 'cabinet', 
+                'specialist', 'cabinet',
                 'service_variant', 'service_variant__service'
             ).order_by('start_time')
         except SpecialistProfile.DoesNotExist:

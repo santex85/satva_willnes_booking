@@ -363,11 +363,10 @@ def my_schedule_view(request):
     # Получаем бронирования на неделю вперед (7 дней)
     week_end = today + datetime.timedelta(days=6)
     
-    # Получаем все бронирования на неделю
+    # Получаем все бронирования на неделю (любой статус)
     bookings = Booking.objects.filter(
         specialist=specialist,
-        start_time__date__range=[today, week_end],
-        status='confirmed'
+        start_time__date__range=[today, week_end]
     ).order_by('start_time')
     
     # Группируем бронирования по дням

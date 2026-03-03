@@ -147,19 +147,21 @@
             },
             eventContent: function(arg) {
                 const props = arg.event.extendedProps || {};
-                if (props.eventType === 'booking' && props.comment) {
-                    const titleEl = document.createElement('div');
-                    titleEl.className = 'fc-event-title';
-                    titleEl.textContent = arg.event.title || '';
-                    const commentEl = document.createElement('div');
-                    commentEl.className = 'fc-event-title fc-event-title-comment';
-                    commentEl.textContent = props.comment.length > 80 ? props.comment.slice(0, 80) + '…' : props.comment;
+                if (props.eventType === 'booking') {
                     const wrap = document.createElement('div');
                     wrap.className = 'fc-event-main-frame';
                     const container = document.createElement('div');
                     container.className = 'fc-event-title-container';
+                    const titleEl = document.createElement('div');
+                    titleEl.className = 'fc-event-title';
+                    titleEl.textContent = arg.event.title || '';
                     container.appendChild(titleEl);
-                    container.appendChild(commentEl);
+                    if (props.comment && props.comment.trim()) {
+                        const commentEl = document.createElement('div');
+                        commentEl.className = 'fc-event-title fc-event-title-comment';
+                        commentEl.textContent = props.comment.length > 80 ? props.comment.slice(0, 80) + '…' : props.comment;
+                        container.appendChild(commentEl);
+                    }
                     wrap.appendChild(container);
                     return { domNodes: [wrap] };
                 }

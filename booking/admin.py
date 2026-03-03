@@ -20,6 +20,7 @@ from .models import (
     ScheduleTemplate,
     ScheduleTemplateDay,
     CabinetClosure,
+    CalendarNote,
     DeletedBooking,
     BookingLog,
     Guest,
@@ -434,3 +435,16 @@ admin.site.register(Cabinet)
 admin.site.register(SpecialistSchedule, SpecialistScheduleAdmin)
 admin.site.register(ServiceVariant)
 admin.site.register(CabinetClosure)
+
+
+@admin.register(CalendarNote)
+class CalendarNoteAdmin(admin.ModelAdmin):
+    list_display = ('start_time', 'end_time', 'comment_short', 'created_by', 'created_at')
+    list_filter = ('created_at',)
+    search_fields = ('comment',)
+    readonly_fields = ('created_at', 'updated_at')
+    date_hierarchy = 'start_time'
+
+    def comment_short(self, obj):
+        return (obj.comment[:50] + '…') if obj.comment and len(obj.comment) > 50 else (obj.comment or '')
+    comment_short.short_description = 'Комментарий'

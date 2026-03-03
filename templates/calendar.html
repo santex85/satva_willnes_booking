@@ -60,6 +60,12 @@
         color: #212529 !important;
         opacity: 0.85;
     }
+    .technical-note-event {
+        background-color: #6c757d !important;
+        border-color: #495057 !important;
+        color: #fff !important;
+        opacity: 0.9;
+    }
     .legend {
         display: flex;
         gap: 1rem;
@@ -148,9 +154,13 @@
 {% block content %}
 <div id="calendar-page" class="calendar-page" 
      data-can-manage-closures="{{ can_manage_closures|yesno:'true,false' }}" 
+     data-can-manage-notes="{{ can_manage_notes|yesno:'true,false' }}"
      data-copy-shortcuts-enabled="{{ copy_shortcuts_enabled|yesno:'true,false' }}"
      data-closure-feed-url="{% url 'calendar_closure_feed' %}"
      data-closure-create-url="{% url 'create_cabinet_closure' %}"
+     data-note-create-url="{% url 'create_calendar_note' %}"
+     data-note-edit-url="{% url 'edit_calendar_note' 0 %}"
+     data-note-delete-url="{% url 'delete_calendar_note' 0 %}"
      data-duplicate-booking-url="{% url 'duplicate_booking' %}">
 <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-3 mb-md-4 gap-2">
     <h1 class="h3 mb-2 mb-md-0"><i class="bi bi-calendar-week"></i> Календарь бронирований</h1>
@@ -161,6 +171,11 @@
         {% if can_manage_closures %}
         <button type="button" class="btn btn-outline-danger flex-fill flex-sm-grow-0" id="open-closure-modal-btn" onclick="openCabinetClosureModal()">
             <i class="bi bi-door-closed"></i> Закрыть кабинет
+        </button>
+        {% endif %}
+        {% if can_manage_notes %}
+        <button type="button" class="btn btn-outline-secondary flex-fill flex-sm-grow-0" id="open-note-modal-btn" onclick="openCalendarNoteCreateModal()">
+            <i class="bi bi-sticky"></i> Добавить заметку
         </button>
         {% endif %}
         <a href="{% url 'select_service' %}" class="btn btn-primary flex-fill flex-sm-grow-0">
@@ -214,6 +229,10 @@
             <div class="legend-item">
                 <div class="legend-color" style="background-color: #adb5bd; border-color: #6c757d;"></div>
                 <span>Кабинет закрыт</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background-color: #6c757d; border-color: #495057;"></div>
+                <span>Техническая запись</span>
             </div>
         </div>
 
@@ -425,6 +444,71 @@
     </div>
 </div>
 {% endif %}
+
+{% if note_form %}
+<!-- Модальное окно создания технической записи -->
+<div class="modal fade" id="calendarNoteCreateModal" tabindex="-1" aria-labelledby="calendarNoteCreateModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="calendarNoteCreateModalLabel"><i class="bi bi-sticky"></i> Добавить заметку</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="calendarNoteCreateForm">
+                {% csrf_token %}
+                <div class="modal-body">
+                    {% include 'booking/partials/calendar_note_form.html' with form=note_form %}
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-check-circle"></i> Создать</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Модальное окно редактирования технической записи -->
+<div class="modal fade" id="calendarNoteEditModal" tabindex="-1" aria-labelledby="calendarNoteEditModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="calendarNoteEditModalLabel"><i class="bi bi-pencil-square"></i> Редактировать заметку</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="calendarNoteEditForm">
+                <div class="modal-body" id="calendarNoteEditModalBody">
+                    <div class="text-center py-4 text-muted">Загрузка…</div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-danger me-auto" id="calendarNoteDeleteBtn"><i class="bi bi-trash"></i> Удалить</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-check-circle"></i> Сохранить</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Модальное окно подтверждения удаления заметки -->
+<div class="modal fade" id="calendarNoteDeleteModal" tabindex="-1" aria-labelledby="calendarNoteDeleteModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title" id="calendarNoteDeleteModalLabel"><i class="bi bi-exclamation-triangle"></i> Удалить заметку?</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-0">Вы уверены, что хотите удалить эту техническую запись?</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                <button type="button" class="btn btn-danger" id="confirmNoteDeleteBtn"><i class="bi bi-trash"></i> Удалить</button>
+            </div>
+        </div>
+    </div>
+</div>
 
 <!-- Модальное окно для результатов -->
 <div class="modal fade" id="resultModal" tabindex="-1">

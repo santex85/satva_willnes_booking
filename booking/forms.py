@@ -13,6 +13,7 @@ from .models import (
     Booking,
     BookingSeries,
     CabinetClosure,
+    CalendarNote,
 )
 import datetime
 import json
@@ -670,5 +671,53 @@ class CabinetClosureForm(forms.ModelForm):
                 'Перенесите или отмените их перед закрытием.'
             )
 
+        return cleaned_data
+
+
+class CalendarNoteForm(forms.ModelForm):
+    """Форма создания и редактирования технической записи в календаре."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['end_time'].required = False
+
+    class Meta:
+        model = CalendarNote
+        fields = ['start_time', 'end_time', 'comment']
+        widgets = {
+            'start_time': forms.DateTimeInput(
+                format='%Y-%m-%dT%H:%M',
+                attrs={
+                    'class': 'form-control',
+                    'autocomplete': 'off',
+                    'data-datetime-picker': 'note-start'
+                }
+            ),
+            'end_time': forms.DateTimeInput(
+                format='%Y-%m-%dT%H:%M',
+                attrs={
+                    'class': 'form-control',
+                    'autocomplete': 'off',
+                    'data-datetime-picker': 'note-end'
+                }
+            ),
+            'comment': forms.Textarea(attrs={
+                'class': 'form-control',
+                'rows': 3,
+                'placeholder': 'Текст заметки…'
+            }),
+        }
+        labels = {
+            'start_time': 'Начало',
+            'end_time': 'Окончание',
+            'comment': 'Комментарий',
+        }
+
+    def clean(self):
+        cleaned_data = super().clean()
+        start_time = cleaned_data.get('start_time')
+        end_time = cleaned_data.get('end_time')
+        if start_time and end_time and end_time <= start_time:
+            raise forms.ValidationError('Окончание должно быть позже начала.')
         return cleaned_data
 

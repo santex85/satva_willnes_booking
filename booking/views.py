@@ -26,6 +26,7 @@ from .models import (
     ScheduleTemplate,
     BookingSeries,
     CabinetClosure,
+    CalendarNote,
     SystemSettings,
     DeletedBooking,
     BookingLog,
@@ -44,6 +45,7 @@ from .forms import (
     BookingEditForm,
     SpecialistRegistrationForm,
     CabinetClosureForm,
+    CalendarNoteForm,
 )
 
 from collections import defaultdict
@@ -297,6 +299,11 @@ def calendar_view(request):
         closure_form = CabinetClosureForm()
         closure_form.fields['cabinet'].queryset = Cabinet.objects.filter(is_active=True).order_by('name')
 
+    can_manage_notes = request.user.is_staff or request.user.is_superuser
+    note_form = None
+    if can_manage_notes:
+        note_form = CalendarNoteForm()
+
     settings_obj = SystemSettings.get_solo()
     copy_shortcuts_enabled = getattr(settings_obj, 'enable_booking_copy_shortcuts', True)
 
@@ -306,6 +313,8 @@ def calendar_view(request):
         'cabinets_with_colors': cabinets_with_colors,
         'closure_form': closure_form,
         'can_manage_closures': can_manage_closures,
+        'note_form': note_form,
+        'can_manage_notes': can_manage_notes,
         'copy_shortcuts_enabled': copy_shortcuts_enabled,
     })
 
@@ -469,7 +478,30 @@ def calendar_feed_view(request):
             'borderColor': colors['border'],
             'textColor': colors['text']
         })
-    
+
+    # Технические записи (информационные заметки)
+    notes = CalendarNote.objects.filter(
+        start_time__lt=end_date,
+        end_time__gt=start_date
+    ).order_by('start_time')
+    for note in notes:
+        title = note.comment[:50] + '…' if len(note.comment) > 50 else note.comment
+        events.append({
+            'id': f'note-{note.pk}',
+            'title': title,
+            'start': note.start_time.isoformat(),
+            'end': note.end_time.isoformat(),
+            'extendedProps': {
+                'eventType': 'technical_note',
+                'noteId': note.pk,
+                'comment': note.comment,
+            },
+            'className': 'technical-note-event',
+            'backgroundColor': '#6c757d',
+            'borderColor': '#495057',
+            'textColor': '#ffffff'
+        })
+
     return JsonResponse(events, safe=False)
 
 
@@ -695,6 +727,69 @@ def delete_cabinet_closure_view(request, pk):
         request.user.username,
     )
     return JsonResponse({'success': True, 'message': 'Закрытие кабинета удалено'})
+
+
+# Calendar notes (technical / informational)
+@staff_required
+@require_POST
+def create_calendar_note_view(request):
+    """
+    Создание технической записи в календаре.
+    Если end_time не передан, по умолчанию start_time + 2 часа.
+    """
+    form = CalendarNoteForm(request.POST)
+    if form.is_valid():
+        note = form.save(commit=False)
+        if not note.end_time and note.start_time:
+            note.end_time = note.start_time + datetime.timedelta(hours=2)
+        note.created_by = request.user
+        note.save()
+        logger.info(
+            "Calendar note created by %s: pk=%s, start=%s",
+            request.user.username, note.pk, note.start_time,
+        )
+        return JsonResponse({
+            'success': True,
+            'message': 'Заметка создана',
+            'note_id': note.pk,
+        })
+    return JsonResponse({'success': False, 'errors': form.errors}, status=400)
+
+
+@staff_required
+def edit_calendar_note_view(request, pk):
+    """
+    Редактирование технической записи (GET — форма, POST — сохранение).
+    """
+    note = get_object_or_404(CalendarNote, pk=pk)
+    if request.method == 'POST':
+        form = CalendarNoteForm(request.POST, instance=note)
+        if form.is_valid():
+            form.save()
+            logger.info("Calendar note %s updated by %s", pk, request.user.username)
+            return JsonResponse({
+                'success': True,
+                'message': 'Заметка сохранена',
+                'note_id': note.pk,
+            })
+        return JsonResponse({'success': False, 'errors': form.errors}, status=400)
+    form = CalendarNoteForm(instance=note)
+    html = render_to_string('booking/partials/calendar_note_form.html', {
+        'form': form,
+        'note': note,
+        'is_edit': True,
+    }, request=request)
+    return JsonResponse({'html': html, 'note_id': note.pk})
+
+
+@staff_required
+@require_POST
+def delete_calendar_note_view(request, pk):
+    """Удаление технической записи."""
+    note = get_object_or_404(CalendarNote, pk=pk)
+    note.delete()
+    logger.info("Calendar note %s deleted by %s", pk, request.user.username)
+    return JsonResponse({'success': True, 'message': 'Заметка удалена'})
 
 
 # Booking wizard views

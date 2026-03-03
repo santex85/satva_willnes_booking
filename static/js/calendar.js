@@ -2,6 +2,7 @@
     let currentView = 'timeGridDay';
     let currentResourceType = 'specialist';
     let canManageClosures = false;
+    let canManageNotes = false;
     let copyShortcutsEnabled = false;
     const SUPPORTED_VIEWS = ['dayGridMonth', 'timeGridWeek', 'timeGridThreeDay', 'timeGridDay'];
     const WIDTH_MODE_STORAGE_KEY = 'calendarWidthMode';
@@ -35,6 +36,16 @@
     const closureDeleteCabinetNameEl = document.getElementById('closureDeleteCabinetName');
     const closureDeletePeriodEl = document.getElementById('closureDeletePeriod');
     const confirmClosureDeleteBtn = document.getElementById('confirmClosureDeleteBtn');
+    let noteCreateUrl = '';
+    let noteEditUrlTemplate = '';
+    let noteDeleteUrlTemplate = '';
+    let calendarNoteCreateModal = null;
+    let calendarNoteEditModal = null;
+    let calendarNoteDeleteModal = null;
+    let noteCreateStartPicker = null;
+    let noteCreateEndPicker = null;
+    let currentEditNoteId = null;
+    let pendingNoteDeleteId = null;
     let cabinetClosureModal;
     let closureDeleteModal;
     let pendingClosureDeleteId = null;
@@ -70,9 +81,13 @@
         const calendarPage = document.getElementById("calendar-page");
         if (calendarPage) {
             canManageClosures = calendarPage.dataset.canManageClosures === "true";
+            canManageNotes = calendarPage.dataset.canManageNotes === "true";
             copyShortcutsEnabled = calendarPage.dataset.copyShortcutsEnabled === "true";
             closureFeedUrl = calendarPage.dataset.closureFeedUrl || '';
             closureCreateUrl = calendarPage.dataset.closureCreateUrl || '';
+            noteCreateUrl = calendarPage.dataset.noteCreateUrl || '';
+            noteEditUrlTemplate = calendarPage.dataset.noteEditUrl || '';
+            noteDeleteUrlTemplate = calendarPage.dataset.noteDeleteUrl || '';
             duplicateBookingUrl = calendarPage.dataset.duplicateBookingUrl || '';
         }
         
@@ -87,6 +102,9 @@
         updateWidthButton();
         initQuickBookingModal();
         initCabinetClosureModals();
+        if (canManageNotes) {
+            initCalendarNoteModals();
+        }
         attachNavigationControls();
         updateCalendarTitle();
     });
@@ -140,6 +158,15 @@
                     }
                     return;
                 }
+                if (eventType === 'technical_note') {
+                    const noteId = info.event.extendedProps && info.event.extendedProps.noteId != null
+                        ? info.event.extendedProps.noteId
+                        : (String(info.event.id).startsWith('note-') ? parseInt(info.event.id.replace('note-', ''), 10) : null);
+                    if (canManageNotes && noteId) {
+                        openCalendarNoteEditModal(noteId);
+                    }
+                    return;
+                }
                 saveViewState();
                 openBookingEditModal(info.event.id);
             },
@@ -171,6 +198,11 @@
                 const eventType = info.event.extendedProps ? info.event.extendedProps.eventType : 'booking';
                 if (eventType === 'closure') {
                     info.el.classList.add('cabinet-closure-event');
+                    info.el.style.right = '';
+                    return;
+                }
+                if (eventType === 'technical_note') {
+                    info.el.classList.add('technical-note-event');
                     info.el.style.right = '';
                     return;
                 }
@@ -1195,11 +1227,259 @@
             });
     }
 
+    function getNoteEditUrl(noteId) {
+        return noteEditUrlTemplate.replace(/\/0\//, '/' + noteId + '/');
+    }
+    function getNoteDeleteUrl(noteId) {
+        return noteDeleteUrlTemplate.replace(/\/0\//, '/' + noteId + '/');
+    }
+
+    function initCalendarNoteModals() {
+        const createModalEl = document.getElementById('calendarNoteCreateModal');
+        const editModalEl = document.getElementById('calendarNoteEditModal');
+        const deleteModalEl = document.getElementById('calendarNoteDeleteModal');
+        const createFormEl = document.getElementById('calendarNoteCreateForm');
+        const editFormEl = document.getElementById('calendarNoteEditForm');
+        const editBodyEl = document.getElementById('calendarNoteEditModalBody');
+        const noteDeleteBtn = document.getElementById('calendarNoteDeleteBtn');
+        const confirmNoteDeleteBtn = document.getElementById('confirmNoteDeleteBtn');
+
+        if (createModalEl) {
+            calendarNoteCreateModal = new bootstrap.Modal(createModalEl);
+        }
+        if (editModalEl) {
+            calendarNoteEditModal = new bootstrap.Modal(editModalEl);
+        }
+        if (deleteModalEl) {
+            calendarNoteDeleteModal = new bootstrap.Modal(deleteModalEl);
+        }
+
+        if (createFormEl) {
+            createFormEl.addEventListener('submit', handleCalendarNoteCreateSubmit);
+        }
+        if (editFormEl) {
+            editFormEl.addEventListener('submit', function(e) {
+                e.preventDefault();
+                if (currentEditNoteId != null) {
+                    handleCalendarNoteEditSubmit(e, currentEditNoteId);
+                }
+            });
+        }
+        if (noteDeleteBtn) {
+            noteDeleteBtn.addEventListener('click', function() {
+                if (currentEditNoteId != null) {
+                    pendingNoteDeleteId = currentEditNoteId;
+                    calendarNoteEditModal.hide();
+                    if (calendarNoteDeleteModal) {
+                        calendarNoteDeleteModal.show();
+                    }
+                }
+            });
+        }
+        if (confirmNoteDeleteBtn) {
+            confirmNoteDeleteBtn.addEventListener('click', handleCalendarNoteDelete);
+        }
+
+        const createStartInput = document.querySelector('#calendarNoteCreateModal input[name="start_time"]');
+        const createEndInput = document.querySelector('#calendarNoteCreateModal input[name="end_time"]');
+        if (createStartInput && createEndInput && window.flatpickr) {
+            const baseOptions = { enableTime: true, time_24hr: true, locale: 'ru', dateFormat: 'Y-m-d\\TH:i' };
+            noteCreateStartPicker = window.flatpickr(createStartInput, Object.assign({}, baseOptions, {
+                onChange: function(selectedDates) {
+                    if (!noteCreateEndPicker || !selectedDates.length) return;
+                    const startDate = selectedDates[0];
+                    noteCreateEndPicker.set('minDate', startDate);
+                    const currentEnd = noteCreateEndPicker.selectedDates[0];
+                    if (!currentEnd || currentEnd <= startDate) {
+                        const defaultEnd = new Date(startDate.getTime() + 2 * 60 * 60 * 1000);
+                        noteCreateEndPicker.setDate(defaultEnd, false);
+                    }
+                }
+            }));
+            noteCreateEndPicker = window.flatpickr(createEndInput, Object.assign({}, baseOptions));
+        }
+    }
+
+    function openCalendarNoteCreateModal() {
+        if (!canManageNotes || !calendarNoteCreateModal) return;
+        const formEl = document.getElementById('calendarNoteCreateForm');
+        if (formEl) formEl.reset();
+        const start = new Date();
+        start.setMinutes(0);
+        start.setSeconds(0, 0);
+        const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
+        if (noteCreateStartPicker) {
+            noteCreateStartPicker.setDate(start, false);
+            if (noteCreateEndPicker) {
+                noteCreateEndPicker.set('minDate', start);
+                noteCreateEndPicker.setDate(end, false);
+            }
+        } else {
+            const startInput = document.querySelector('#calendarNoteCreateModal input[name="start_time"]');
+            const endInput = document.querySelector('#calendarNoteCreateModal input[name="end_time"]');
+            if (startInput) startInput.value = formatDateForInput(start);
+            if (endInput) endInput.value = formatDateForInput(end);
+        }
+        calendarNoteCreateModal.show();
+    }
+
+    function openCalendarNoteEditModal(noteId) {
+        if (!canManageNotes || !calendarNoteEditModal || !noteId) return;
+        currentEditNoteId = noteId;
+        const editBodyEl = document.getElementById('calendarNoteEditModalBody');
+        if (!editBodyEl) return;
+        editBodyEl.innerHTML = '<div class="text-center py-4 text-muted">Загрузка…</div>';
+        calendarNoteEditModal.show();
+
+        const url = getNoteEditUrl(noteId);
+        fetch(url, { headers: { 'Accept': 'application/json' } })
+            .then(function(response) { return response.json(); })
+            .then(function(data) {
+                if (data.html) {
+                    editBodyEl.innerHTML = data.html;
+                    const startInput = editBodyEl.querySelector('input[name="start_time"]');
+                    const endInput = editBodyEl.querySelector('input[name="end_time"]');
+                    if (startInput && endInput && window.flatpickr) {
+                        const baseOptions = { enableTime: true, time_24hr: true, locale: 'ru', dateFormat: 'Y-m-d\\TH:i' };
+                        window.flatpickr(startInput, Object.assign({}, baseOptions, {
+                            onChange: function(selectedDates) {
+                                if (!selectedDates.length || !endInput._flatpickr) return;
+                                endInput._flatpickr.set('minDate', selectedDates[0]);
+                            }
+                        }));
+                        window.flatpickr(endInput, baseOptions);
+                    }
+                }
+            })
+            .catch(function(err) {
+                console.error('Error loading note form:', err);
+                editBodyEl.innerHTML = '<p class="text-danger">Не удалось загрузить форму</p>';
+            });
+    }
+
+    function handleCalendarNoteCreateSubmit(event) {
+        event.preventDefault();
+        const formEl = document.getElementById('calendarNoteCreateForm');
+        if (!formEl || !noteCreateUrl) return;
+        const submitBtn = formEl.querySelector('button[type="submit"]');
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Создание...';
+        }
+        const formData = new FormData(formEl);
+        fetch(noteCreateUrl, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrftoken },
+            body: formData
+        })
+            .then(function(response) { return response.json().then(function(data) { return { ok: response.ok, data: data }; }); })
+            .then(function(result) {
+                if (result.ok && result.data.success) {
+                    calendarNoteCreateModal.hide();
+                    showResultModal('Успех', result.data.message || 'Заметка создана', true);
+                    if (calendar) calendar.refetchEvents();
+                } else {
+                    showResultModal('Ошибка', result.data.errors ? Object.values(result.data.errors).flat().join(' ') : 'Не удалось создать заметку', false);
+                }
+            })
+            .catch(function(err) {
+                console.error('Error creating note:', err);
+                showResultModal('Ошибка', 'Произошла ошибка при создании заметки', false);
+            })
+            .finally(function() {
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = '<i class="bi bi-check-circle"></i> Создать';
+                }
+            });
+    }
+
+    function handleCalendarNoteEditSubmit(event, noteId) {
+        event.preventDefault();
+        const formEl = document.getElementById('calendarNoteEditForm');
+        if (!formEl || noteId == null) return;
+        const submitBtn = formEl.querySelector('button[type="submit"]');
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Сохранение...';
+        }
+        const formData = new FormData(formEl);
+        const url = getNoteEditUrl(noteId);
+        fetch(url, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrftoken },
+            body: formData
+        })
+            .then(function(response) { return response.json().then(function(data) { return { ok: response.ok, data: data }; }); })
+            .then(function(result) {
+                if (result.ok && result.data.success) {
+                    calendarNoteEditModal.hide();
+                    currentEditNoteId = null;
+                    showResultModal('Успех', result.data.message || 'Заметка сохранена', true);
+                    if (calendar) calendar.refetchEvents();
+                } else {
+                    showResultModal('Ошибка', result.data.errors ? Object.values(result.data.errors).flat().join(' ') : 'Не удалось сохранить', false);
+                }
+            })
+            .catch(function(err) {
+                console.error('Error saving note:', err);
+                showResultModal('Ошибка', 'Произошла ошибка при сохранении заметки', false);
+            })
+            .finally(function() {
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = '<i class="bi bi-check-circle"></i> Сохранить';
+                }
+            });
+    }
+
+    function handleCalendarNoteDelete() {
+        if (pendingNoteDeleteId == null) return;
+        const url = getNoteDeleteUrl(pendingNoteDeleteId);
+        const btn = document.getElementById('confirmNoteDeleteBtn');
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Удаление...';
+        }
+        fetch(url, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrftoken }
+        })
+            .then(function(response) { return response.json().then(function(data) { return { ok: response.ok, data: data }; }); })
+            .then(function(result) {
+                if (result.ok && result.data.success) {
+                    calendarNoteDeleteModal.hide();
+                    currentEditNoteId = null;
+                    pendingNoteDeleteId = null;
+                    showResultModal('Успех', result.data.message || 'Заметка удалена', true);
+                    if (calendar) calendar.refetchEvents();
+                } else {
+                    showResultModal('Ошибка', result.data.error || 'Не удалось удалить заметку', false);
+                }
+            })
+            .catch(function(err) {
+                console.error('Error deleting note:', err);
+                showResultModal('Ошибка', 'Произошла ошибка при удалении заметки', false);
+            })
+            .finally(function() {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="bi bi-trash"></i> Удалить';
+                }
+                pendingNoteDeleteId = null;
+            });
+    }
+
     function handleEventDrop(info) {
+        const event = info.event;
+        const eventType = event.extendedProps && event.extendedProps.eventType;
+        if (eventType === 'technical_note' || eventType === 'closure') {
+            info.revert();
+            return;
+        }
+
         // Откатываем событие на случай ошибки
         const revert = info.revert;
-
-        const event = info.event;
         const newStart = event.start;
         const bookingId = event.id;
 

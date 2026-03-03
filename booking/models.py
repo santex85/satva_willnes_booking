@@ -565,6 +565,39 @@ class CabinetClosure(models.Model):
         return f"{self.cabinet.name}: {start} — {end}"
 
 
+class CalendarNote(models.Model):
+    """Техническая запись (информационная заметка) в календаре без привязки к кабинету и специалисту."""
+    start_time = models.DateTimeField(verbose_name='Время начала')
+    end_time = models.DateTimeField(verbose_name='Время окончания')
+    comment = models.TextField(verbose_name='Комментарий')
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='calendar_notes',
+        verbose_name='Создано пользователем'
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='Создано')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='Обновлено')
+
+    class Meta:
+        verbose_name = 'Техническая запись'
+        verbose_name_plural = 'Технические записи'
+        ordering = ['start_time']
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(end_time__gt=models.F('start_time')),
+                name='calendarnote_end_after_start'
+            )
+        ]
+
+    def __str__(self):
+        start = timezone.localtime(self.start_time).strftime('%d.%m.%Y %H:%M')
+        short = (self.comment[:40] + '…') if len(self.comment) > 40 else self.comment
+        return f"{short}: {start}"
+
+
 class DeletedBooking(models.Model):
     """Архив удаленных бронирований для возможности восстановления."""
     

@@ -1388,7 +1388,9 @@
                 if (result.ok && result.data.success) {
                     if (quickBookingModal) quickBookingModal.hide();
                     showResultModal('Успех', result.data.message || 'Заметка создана', true);
-                    if (calendar) calendar.refetchEvents();
+                    if (calendar) {
+                        setTimeout(function() { calendar.refetchEvents(); }, 150);
+                    }
                 } else {
                     showResultModal('Ошибка', result.data.errors ? Object.values(result.data.errors).flat().join(' ') : 'Не удалось создать заметку', false);
                 }

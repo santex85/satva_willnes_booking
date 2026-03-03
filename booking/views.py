@@ -502,7 +502,10 @@ def calendar_feed_view(request):
             'textColor': '#ffffff'
         })
 
-    return JsonResponse(events, safe=False)
+    response = JsonResponse(events, safe=False)
+    response['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    response['Pragma'] = 'no-cache'
+    return response
 
 
 @staff_required

@@ -165,6 +165,18 @@
                     wrap.appendChild(container);
                     return { domNodes: [wrap] };
                 }
+                if (props.eventType === 'technical_note') {
+                    const wrap = document.createElement('div');
+                    wrap.className = 'fc-event-main-frame';
+                    const container = document.createElement('div');
+                    container.className = 'fc-event-title-container';
+                    const titleEl = document.createElement('div');
+                    titleEl.className = 'fc-event-title';
+                    titleEl.textContent = arg.event.title || (props.comment ? (props.comment.length > 80 ? props.comment.slice(0, 80) + '…' : props.comment) : 'Заметка');
+                    container.appendChild(titleEl);
+                    wrap.appendChild(container);
+                    return { domNodes: [wrap] };
+                }
                 return null;
             },
             eventSources: eventSources,

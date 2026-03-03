@@ -488,7 +488,8 @@ def calendar_feed_view(request):
         end_time__gt=start_date
     ).order_by('start_time')
     for note in notes:
-        title = note.comment[:50] + '…' if len(note.comment) > 50 else note.comment
+        raw_comment = (note.comment or '').strip()
+        title = (raw_comment[:50] + '…') if len(raw_comment) > 50 else (raw_comment or 'Техническая запись')
         events.append({
             'id': f'note-{note.pk}',
             'title': title,

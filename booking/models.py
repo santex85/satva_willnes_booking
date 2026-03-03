@@ -460,6 +460,10 @@ class Booking(models.Model):
         blank=True,
         verbose_name='Номер комнаты гостя'
     )
+    comment = models.TextField(
+        blank=True,
+        verbose_name='Комментарий'
+    )
     service_variant = models.ForeignKey(
         ServiceVariant,
         on_delete=models.PROTECT,

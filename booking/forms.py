@@ -190,6 +190,11 @@ class QuickBookingForm(forms.Form):
         widget=forms.TextInput(attrs={'class': 'form-control'}),
         required=False
     )
+    comment = forms.CharField(
+        label='Комментарий',
+        widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 2}),
+        required=False
+    )
     start_datetime = forms.DateTimeField(
         widget=forms.HiddenInput(),
         required=True,
@@ -382,10 +387,11 @@ class BookingEditForm(forms.ModelForm):
     
     class Meta:
         model = Booking
-        fields = ['guest_name', 'guest_room_number', 'status']
+        fields = ['guest_name', 'guest_room_number', 'comment', 'status']
         widgets = {
             'guest_name': forms.TextInput(attrs={'class': 'form-control'}),
             'guest_room_number': forms.TextInput(attrs={'class': 'form-control'}),
+            'comment': forms.Textarea(attrs={'class': 'form-control', 'rows': 2}),
             'status': forms.Select(attrs={'class': 'form-select'}),
         }
     

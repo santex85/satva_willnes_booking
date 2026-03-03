@@ -39,6 +39,13 @@
         text-overflow: ellipsis;
         white-space: nowrap;
     }
+    .fc-event-title-comment {
+        font-size: 0.85em;
+        opacity: 0.95;
+        white-space: normal;
+        line-height: 1.2;
+        margin-top: 0.15em;
+    }
     .fc-daygrid-day:hover,
     .fc-timegrid-slot:hover {
         cursor: pointer;
@@ -305,6 +312,11 @@
                     <div class="mb-3">
                         <label for="guest_room_number" class="form-label">Номер комнаты</label>
                         <input type="text" class="form-control" id="guest_room_number" name="guest_room_number">
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="booking_comment" class="form-label">Комментарий</label>
+                        <textarea class="form-control" id="booking_comment" name="comment" rows="2" placeholder="Комментарий к бронированию…"></textarea>
                     </div>
 
                     <div class="card border-warning-subtle mb-3" data-role="quick-recurrence-card">

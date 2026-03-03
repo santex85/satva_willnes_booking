@@ -227,6 +227,7 @@ def handle_series_booking_update(booking, updated_booking, recurrence_payload, u
             Booking.objects.create(
                 guest_name=updated_booking.guest_name,
                 guest_room_number=updated_booking.guest_room_number,
+                comment=updated_booking.comment,
                 service_variant=updated_booking.service_variant,
                 specialist=updated_booking.specialist,
                 cabinet=updated_booking.cabinet,
@@ -454,9 +455,10 @@ def calendar_feed_view(request):
             'canceled': '✗ '
         }
         status_icon = status_icons.get(b.status, '')
-        # Формат: [статус] Гость - Специалист (услуга)
+        # Формат: [статус] Гость - Специалист (услуга); комментарий отдаём в extendedProps и выводим в календаре отдельно
         specialist_short = b.specialist.full_name.split()[0]  # Только имя
         title = f"{status_icon}{b.guest_name} - {specialist_short} ({b.service_variant.name_suffix})"
+        comment_text = (b.comment or '').strip()
         
         events.append({
             'id': b.id,
@@ -472,6 +474,7 @@ def calendar_feed_view(request):
                 'cabinet': b.cabinet.name,
                 'guest_name': b.guest_name,
                 'guest_room': b.guest_room_number,
+                'comment': comment_text,
                 'seriesId': b.series_id or None
             },
             'backgroundColor': colors['bg'],
@@ -954,6 +957,7 @@ def create_booking_view(request):
         booking = Booking.objects.create(
             guest_name=request.POST.get('guest_name'),
             guest_room_number=request.POST.get('guest_room_number'),
+            comment=(request.POST.get('comment') or '').strip(),
             service_variant_id=service_variant_id,
             specialist_id=specialist_id,
             cabinet_id=cabinet_id,
@@ -1283,6 +1287,7 @@ def quick_create_booking_view(request):
                 specialist = form.cleaned_data['specialist']
                 guest_name = form.cleaned_data['guest_name']
                 guest_room_number = form.cleaned_data.get('guest_room_number', '')
+                comment = (form.cleaned_data.get('comment') or '').strip()
                 start_datetime = form.cleaned_data['start_datetime']
                 
                 # Убеждаемся, что дата timezone-aware
@@ -1359,6 +1364,7 @@ def quick_create_booking_view(request):
                             booking = Booking.objects.create(
                                 guest_name=guest_name,
                                 guest_room_number=guest_room_number,
+                                comment=comment,
                                 service_variant=service_variant,
                                 specialist=specialist,
                                 cabinet=cabinet,
@@ -1397,6 +1403,7 @@ def quick_create_booking_view(request):
                         booking = Booking.objects.create(
                             guest_name=guest_name,
                             guest_room_number=guest_room_number,
+                            comment=comment,
                             service_variant=service_variant,
                             specialist=specialist,
                             cabinet=cabinet,
@@ -1501,6 +1508,7 @@ def duplicate_booking_view(request):
             duplicated_booking = Booking.objects.create(
                 guest_name=original_booking.guest_name,
                 guest_room_number=original_booking.guest_room_number,
+                comment=original_booking.comment,
                 service_variant=original_booking.service_variant,
                 specialist=original_booking.specialist,
                 cabinet=original_booking.cabinet,

@@ -145,6 +145,26 @@
                 minute: '2-digit',
                 hour12: false
             },
+            eventContent: function(arg) {
+                const props = arg.event.extendedProps || {};
+                if (props.eventType === 'booking' && props.comment) {
+                    const titleEl = document.createElement('div');
+                    titleEl.className = 'fc-event-title';
+                    titleEl.textContent = arg.event.title || '';
+                    const commentEl = document.createElement('div');
+                    commentEl.className = 'fc-event-title fc-event-title-comment';
+                    commentEl.textContent = props.comment.length > 80 ? props.comment.slice(0, 80) + '…' : props.comment;
+                    const wrap = document.createElement('div');
+                    wrap.className = 'fc-event-main-frame';
+                    const container = document.createElement('div');
+                    container.className = 'fc-event-title-container';
+                    container.appendChild(titleEl);
+                    container.appendChild(commentEl);
+                    wrap.appendChild(container);
+                    return { domNodes: [wrap] };
+                }
+                return null;
+            },
             eventSources: eventSources,
             slotMinTime: '08:00:00',
             slotMaxTime: '22:00:00',

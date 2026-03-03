@@ -235,6 +235,7 @@ def restore_booking(deleted_booking_id, restored_by=None):
         booking = Booking.objects.create(
             guest_name=booking_data['guest_name'],
             guest_room_number=booking_data.get('guest_room_number', ''),
+            comment=booking_data.get('comment', ''),
             service_variant=service_variant,
             specialist=specialist,
             cabinet=cabinet,

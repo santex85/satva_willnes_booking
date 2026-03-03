@@ -191,8 +191,8 @@
                     return;
                 }
 
-                // В месячном виде открываем модальное окно с выбранной датой
-                openQuickBookingModal(targetDate, info.dateStr);
+                // Открываем модалку с вкладками «Бронирование» / «Заметка» и подставляем дату
+                openSlotModal(targetDate, info.dateStr, 'booking');
             },
             eventDidMount: function(info) {
                 const eventType = info.event.extendedProps ? info.event.extendedProps.eventType : 'booking';
@@ -797,16 +797,13 @@
             });
     }
 
-    function openQuickBookingModal(date, dateStr) {
-        // Форматируем дату для отображения
+    function openSlotModal(date, dateStr, activeTab) {
+        activeTab = activeTab || 'booking';
         const localDate = new Date(date);
-        
-        // Проверяем, является ли это кликом из месячного вида
-        const isMonthView = calendar.view.type === 'dayGridMonth';
-        
+        const isMonthView = calendar && calendar.view && calendar.view.type === 'dayGridMonth';
+
         let formattedDate;
         if (isMonthView) {
-            // Для месячного вида показываем только дату без времени
             formattedDate = localDate.toLocaleDateString('ru-RU', {
                 weekday: 'long',
                 year: 'numeric',
@@ -814,7 +811,6 @@
                 day: 'numeric'
             });
         } else {
-            // Для временных видов показываем дату и время
             formattedDate = localDate.toLocaleString('ru-RU', {
                 weekday: 'short',
                 year: 'numeric',
@@ -825,73 +821,98 @@
             });
         }
 
-        document.getElementById('selectedDateTime').textContent = formattedDate;
+        const titleEl = document.getElementById('slotModalTitle');
+        if (titleEl) {
+            titleEl.textContent = canManageNotes ? 'Создать запись' : 'Создать бронирование';
+        }
 
-        // Форматируем дату в локальное время для отправки на сервер
-        // Формат: YYYY-MM-DDTHH:MM (локальное время, не UTC)
+        const selectedDateTimeEl = document.getElementById('selectedDateTime');
+        if (selectedDateTimeEl) selectedDateTimeEl.textContent = formattedDate;
+
         const year = localDate.getFullYear();
         const month = String(localDate.getMonth() + 1).padStart(2, '0');
         const day = String(localDate.getDate()).padStart(2, '0');
         const hours = String(localDate.getHours()).padStart(2, '0');
         const minutes = String(localDate.getMinutes()).padStart(2, '0');
-        const localDateTime = `${year}-${month}-${day}T${hours}:${minutes}`;
+        const localDateTime = year + '-' + month + '-' + day + 'T' + hours + ':' + minutes;
 
-        document.getElementById('start_datetime').value = localDateTime;
+        const startDatetimeEl = document.getElementById('start_datetime');
+        if (startDatetimeEl) startDatetimeEl.value = localDateTime;
 
-        // Сбрасываем форму
-        document.getElementById('quickBookingForm').reset();
-        document.getElementById('start_datetime').value = localDateTime;
-        document.getElementById('specialist').innerHTML = '<option value="">Сначала выберите услугу</option>';
-        document.getElementById('cabinet').innerHTML = '<option value="">Сначала выберите услугу, специалиста и время</option>';
+        const quickForm = document.getElementById('quickBookingForm');
+        if (quickForm) {
+            quickForm.reset();
+            if (startDatetimeEl) startDatetimeEl.value = localDateTime;
+        }
+        const specialistEl = document.getElementById('specialist');
+        if (specialistEl) specialistEl.innerHTML = '<option value="">Сначала выберите услугу</option>';
+        const cabinetEl = document.getElementById('cabinet');
+        if (cabinetEl) cabinetEl.innerHTML = '<option value="">Сначала выберите услугу, специалиста и время</option>';
         resetQuickRecurrenceControls();
 
-        // Показываем модальное окно
+        if (canManageNotes) {
+            const tabNoteBtn = document.getElementById('slot-tab-note-btn');
+            const tabBookingBtn = document.getElementById('slot-tab-booking-btn');
+            if (activeTab === 'note' && tabNoteBtn) {
+                bootstrap.Tab.getOrCreateInstance(tabNoteBtn).show();
+            } else if (tabBookingBtn) {
+                bootstrap.Tab.getOrCreateInstance(tabBookingBtn).show();
+            }
+            setNoteFormDatetime(localDate);
+        }
+
         if (!quickBookingModal) {
             quickBookingModal = new bootstrap.Modal(document.getElementById('quickBookingModal'));
         }
         quickBookingModal.show();
-        
-        // Загружаем кабинеты автоматически при показе модального окна, если услуга и специалист уже выбраны
+
         const modalElement = document.getElementById('quickBookingModal');
-        const handleModalShown = function() {
-            setTimeout(function() {
-                const serviceVariantId = document.getElementById('service_variant').value;
-                const specialistId = document.getElementById('specialist').value;
-                const startDatetime = document.getElementById('start_datetime').value;
-                
-                if (serviceVariantId && specialistId && startDatetime) {
-                    loadAvailableCabinets();
-                }
-                
-                // Инициализируем автодополнение для поля имени гостя
-                const guestNameInput = document.getElementById('guest_name');
-                if (guestNameInput) {
-                    // Проверяем, что GuestAutocomplete доступен
-                    if (window.GuestAutocomplete && window.GuestAutocomplete.init) {
-                        // Удаляем предыдущую инициализацию, если есть
+        if (modalElement) {
+            const handleModalShown = function() {
+                setTimeout(function() {
+                    const serviceVariantId = document.getElementById('service_variant') && document.getElementById('service_variant').value;
+                    const specialistId = document.getElementById('specialist') && document.getElementById('specialist').value;
+                    const startDatetime = document.getElementById('start_datetime') && document.getElementById('start_datetime').value;
+                    if (serviceVariantId && specialistId && startDatetime && typeof loadAvailableCabinets === 'function') {
+                        loadAvailableCabinets();
+                    }
+                    const guestNameInput = document.getElementById('guest_name');
+                    if (guestNameInput && window.GuestAutocomplete && window.GuestAutocomplete.init) {
                         if (guestNameInput._autocompleteInstance) {
-                            try {
-                                guestNameInput._autocompleteInstance.destroy();
-                            } catch (e) {
-                                console.warn('Error destroying autocomplete:', e);
-                            }
+                            try { guestNameInput._autocompleteInstance.destroy(); } catch (e) {}
                         }
                         try {
-                            guestNameInput._autocompleteInstance = window.GuestAutocomplete.init(guestNameInput, {
-                                minLength: 2,
-                                delay: 300,
-                                limit: 10
-                            });
-                        } catch (e) {
-                            console.error('Error initializing autocomplete:', e);
-                        }
-                    } else {
-                        console.warn('GuestAutocomplete not available');
+                            guestNameInput._autocompleteInstance = window.GuestAutocomplete.init(guestNameInput, { minLength: 2, delay: 300, limit: 10 });
+                        } catch (e) { console.error('Error initializing autocomplete:', e); }
                     }
-                }
-            }, 100);
-        };
-        modalElement.addEventListener('shown.bs.modal', handleModalShown, { once: true });
+                }, 100);
+            };
+            modalElement.addEventListener('shown.bs.modal', handleModalShown, { once: true });
+        }
+    }
+
+    function setNoteFormDatetime(startDate) {
+        const start = startDate instanceof Date ? new Date(startDate.getTime()) : new Date();
+        start.setSeconds(0, 0);
+        const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
+        const modal = document.getElementById('quickBookingModal');
+        if (!modal) return;
+        const startInput = modal.querySelector('input[name="start_time"]');
+        const endInput = modal.querySelector('input[name="end_time"]');
+        if (noteCreateStartPicker) {
+            noteCreateStartPicker.setDate(start, false);
+            if (noteCreateEndPicker) {
+                noteCreateEndPicker.set('minDate', start);
+                noteCreateEndPicker.setDate(end, false);
+            }
+        } else if (startInput && endInput) {
+            startInput.value = formatDateForInput(start);
+            endInput.value = formatDateForInput(end);
+        }
+    }
+
+    function openQuickBookingModal(date, dateStr) {
+        openSlotModal(date, dateStr, 'booking');
     }
 
     function initQuickBookingModal() {
@@ -1235,7 +1256,6 @@
     }
 
     function initCalendarNoteModals() {
-        const createModalEl = document.getElementById('calendarNoteCreateModal');
         const editModalEl = document.getElementById('calendarNoteEditModal');
         const deleteModalEl = document.getElementById('calendarNoteDeleteModal');
         const createFormEl = document.getElementById('calendarNoteCreateForm');
@@ -1244,9 +1264,6 @@
         const noteDeleteBtn = document.getElementById('calendarNoteDeleteBtn');
         const confirmNoteDeleteBtn = document.getElementById('confirmNoteDeleteBtn');
 
-        if (createModalEl) {
-            calendarNoteCreateModal = new bootstrap.Modal(createModalEl);
-        }
         if (editModalEl) {
             calendarNoteEditModal = new bootstrap.Modal(editModalEl);
         }
@@ -1280,8 +1297,9 @@
             confirmNoteDeleteBtn.addEventListener('click', handleCalendarNoteDelete);
         }
 
-        const createStartInput = document.querySelector('#calendarNoteCreateModal input[name="start_time"]');
-        const createEndInput = document.querySelector('#calendarNoteCreateModal input[name="end_time"]');
+        const slotModal = document.getElementById('quickBookingModal');
+        const createStartInput = slotModal ? slotModal.querySelector('input[name="start_time"]') : null;
+        const createEndInput = slotModal ? slotModal.querySelector('input[name="end_time"]') : null;
         if (createStartInput && createEndInput && window.flatpickr) {
             const baseOptions = { enableTime: true, time_24hr: true, locale: 'ru', dateFormat: 'Y-m-d\\TH:i' };
             noteCreateStartPicker = window.flatpickr(createStartInput, Object.assign({}, baseOptions, {
@@ -1300,27 +1318,20 @@
         }
     }
 
-    function openCalendarNoteCreateModal() {
-        if (!canManageNotes || !calendarNoteCreateModal) return;
+    function openCalendarNoteCreateModal(optionalDate) {
+        if (!canManageNotes) return;
         const formEl = document.getElementById('calendarNoteCreateForm');
         if (formEl) formEl.reset();
-        const start = new Date();
-        start.setMinutes(0);
-        start.setSeconds(0, 0);
-        const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
-        if (noteCreateStartPicker) {
-            noteCreateStartPicker.setDate(start, false);
-            if (noteCreateEndPicker) {
-                noteCreateEndPicker.set('minDate', start);
-                noteCreateEndPicker.setDate(end, false);
-            }
-        } else {
-            const startInput = document.querySelector('#calendarNoteCreateModal input[name="start_time"]');
-            const endInput = document.querySelector('#calendarNoteCreateModal input[name="end_time"]');
-            if (startInput) startInput.value = formatDateForInput(start);
-            if (endInput) endInput.value = formatDateForInput(end);
+        const dateToUse = optionalDate instanceof Date ? optionalDate : new Date();
+        if (!quickBookingModal) {
+            quickBookingModal = new bootstrap.Modal(document.getElementById('quickBookingModal'));
         }
-        calendarNoteCreateModal.show();
+        const titleEl = document.getElementById('slotModalTitle');
+        if (titleEl) titleEl.textContent = canManageNotes ? 'Создать запись' : 'Создать бронирование';
+        const tabNoteBtn = document.getElementById('slot-tab-note-btn');
+        if (tabNoteBtn) bootstrap.Tab.getOrCreateInstance(tabNoteBtn).show();
+        setNoteFormDatetime(dateToUse);
+        quickBookingModal.show();
     }
 
     function openCalendarNoteEditModal(noteId) {
@@ -1375,7 +1386,7 @@
             .then(function(response) { return response.json().then(function(data) { return { ok: response.ok, data: data }; }); })
             .then(function(result) {
                 if (result.ok && result.data.success) {
-                    calendarNoteCreateModal.hide();
+                    if (quickBookingModal) quickBookingModal.hide();
                     showResultModal('Успех', result.data.message || 'Заметка создана', true);
                     if (calendar) calendar.refetchEvents();
                 } else {

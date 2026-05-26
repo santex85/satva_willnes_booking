@@ -15,6 +15,7 @@ import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+FRONTEND_DIST = BASE_DIR / 'frontend' / 'dist'
 
 
 # Quick-start development settings - unsuitable for production
@@ -26,26 +27,59 @@ SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-r!hxgxgng1r$ly
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1']
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', '.localhost']
+
+CORS_ALLOWED_ORIGINS = [
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    'http://demo.localhost:5173',
+]
+CORS_ALLOW_CREDENTIALS = True
 
 
 # Application definition
 
-INSTALLED_APPS = [
+DATABASE_ROUTERS = (
+    'django_tenants.routers.TenantSyncRouter',
+)
+
+SHARED_APPS = [
+    'django_tenants',  # Обязательно первым!
+    'config',          # Приложение с моделями Client и Domain
+    'corsheaders',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'rest_framework',
-    'rest_framework.authtoken',
-    'booking',
-    'solo',
     'django_cf_turnstile',
 ]
 
+TENANT_APPS = [
+    'django.contrib.auth',  # Специалисты и пользователи каждого салона изолированы
+    'django.contrib.contenttypes',
+    'booking',              # Основное спа-приложение изолировано
+    'solo',
+    'rest_framework',
+    'rest_framework.authtoken',
+]
+
+# Объединяем списки приложений, сохраняя строгий порядок
+INSTALLED_APPS = []
+for app in SHARED_APPS:
+    if app not in INSTALLED_APPS:
+        INSTALLED_APPS.append(app)
+for app in TENANT_APPS:
+    if app not in INSTALLED_APPS:
+        INSTALLED_APPS.append(app)
+
+TENANT_MODEL = 'config.Client'
+TENANT_DOMAIN_MODEL = 'config.Domain'
+
 MIDDLEWARE = [
+    'django_tenants.middleware.main.TenantMainMiddleware',  # Обязательно первым!
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -81,12 +115,12 @@ WSGI_APPLICATION = 'config.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'satva_wellness_booking',
-        'USER': 'postgres',
-        'PASSWORD': 'postgres',
-        'HOST': 'localhost',
-        'PORT': '5432',
+        'ENGINE': 'django_tenants.postgresql_backend',  # Драйвер django-tenants
+        'NAME': os.environ.get('DATABASE_NAME', 'satva_wellness_booking'),
+        'USER': os.environ.get('DATABASE_USER', 'postgres'),
+        'PASSWORD': os.environ.get('DATABASE_PASSWORD', 'postgres'),
+        'HOST': os.environ.get('DATABASE_HOST', 'localhost'),
+        'PORT': os.environ.get('DATABASE_PORT', '5432'),
     }
 }
 
@@ -142,8 +176,8 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Login/Logout redirects
 LOGIN_REDIRECT_URL = 'index'
-LOGOUT_REDIRECT_URL = 'login'
-LOGIN_URL = 'login'
+LOGOUT_REDIRECT_URL = 'index'
+LOGIN_URL = 'index'
 
 # Email settings
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'

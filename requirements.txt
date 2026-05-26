@@ -7,4 +7,5 @@ gunicorn==21.2.0
 sentry-sdk==1.40.0
 django-cf-turnstile==0.1.0
 whitenoise==6.6.0
-
+django-tenants==3.10.1
+django-cors-headers==4.6.0

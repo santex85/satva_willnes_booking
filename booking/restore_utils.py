@@ -97,7 +97,7 @@ def check_restore_conflicts(booking_data, series_data=None):
             occurrences = series.generate_datetimes()
             if occurrences:
                 # Импортируем функцию из views
-                from booking.views import detect_occurrence_conflicts
+                from booking.series_utils import detect_occurrence_conflicts
                 series_conflicts = detect_occurrence_conflicts(
                     occurrences,
                     service_variant=service_variant,

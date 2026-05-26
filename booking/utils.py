@@ -59,10 +59,12 @@ def find_available_slots(date: datetime.date, service_variant: ServiceVariant) -
     day_start = timezone.make_aware(datetime.datetime.combine(date, datetime.time.min))
     day_end = timezone.make_aware(datetime.datetime.combine(date, datetime.time.max))
     
-    existing_bookings = Booking.objects.filter(
+    # ВАЖНО: Преобразуем QuerySet в список (list), чтобы выполнить ВСЕГО ОДИН запрос к БД
+    # и избежать проблемы N+1 запросов при проверках в циклах.
+    bookings_list = list(Booking.objects.filter(
         start_time__range=(day_start, day_end),
         status='confirmed'
-    ).select_related('specialist', 'cabinet')
+    ).select_related('specialist', 'cabinet'))
 
     closures = CabinetClosure.objects.filter(
         cabinet__in=valid_cabinets,
@@ -93,19 +95,21 @@ def find_available_slots(date: datetime.date, service_variant: ServiceVariant) -
         while slot_datetime_end.time() <= schedule.end_time:
             
             # 6. Проверка: Свободен ли специалист?
-            is_specialist_busy = existing_bookings.filter(
-                specialist=specialist,
-                start_time__lt=slot_datetime_end,
-                end_time__gt=slot_datetime_start
-            ).exists()
+            # Выполняем проверку в памяти (без SQL запросов к БД)
+            is_specialist_busy = any(
+                b.specialist_id == specialist.id and
+                b.start_time < slot_datetime_end and
+                b.end_time > slot_datetime_start
+                for b in bookings_list
+            )
             
             if not is_specialist_busy:
                 # 7. Находим все доступные кабинеты для этого слота
-                # Находим кабинеты, занятые в этот слот КЕМ УГОДНО
-                busy_cabinets_ids = set(existing_bookings.filter(
-                    start_time__lt=slot_datetime_end,
-                    end_time__gt=slot_datetime_start
-                ).values_list('cabinet_id', flat=True))
+                # Находим кабинеты, занятые в этот слот КЕМ УГОДНО (в памяти)
+                busy_cabinets_ids = {
+                    b.cabinet_id for b in bookings_list
+                    if b.start_time < slot_datetime_end and b.end_time > slot_datetime_start
+                }
 
                 for cabinet_id, cabinet_closures in closures_by_cabinet.items():
                     for closure in cabinet_closures:
@@ -113,8 +117,11 @@ def find_available_slots(date: datetime.date, service_variant: ServiceVariant) -
                             busy_cabinets_ids.add(cabinet_id)
                             break
 
-                # Находим все свободные кабинеты нужного типа
-                available_cabinets = list(valid_cabinets.exclude(id__in=list(busy_cabinets_ids)))
+                # Находим все свободные кабинеты нужного типа (в памяти)
+                available_cabinets = [
+                    cab for cab in valid_cabinets
+                    if cab.id not in busy_cabinets_ids
+                ]
                 
                 if available_cabinets:
                     # Создаем ключ для группировки: время + специалист

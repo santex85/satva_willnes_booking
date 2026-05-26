@@ -1,8 +1,23 @@
-.PHONY: help build up down restart logs shell migrate createsuperuser collectstatic backup backup-safe restore restore-safe deploy deploy-full deploy-safe deploy-remote health-check
+.PHONY: help build up down restart logs shell migrate createsuperuser collectstatic backup backup-safe restore restore-safe deploy deploy-full deploy-safe deploy-remote health-check dev dev-stop dev-logs dev-restart
 
 help: ## Показать эту справку
 	@echo "Доступные команды:"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
+
+dev: ## Полный перезапуск локальной разработки (DB + Django:8002 + Vite:5173)
+	@chmod +x scripts/dev.sh
+	@./scripts/dev.sh start
+
+dev-stop: ## Остановить локальные dev-сервисы (Django + Vite)
+	@chmod +x scripts/dev.sh
+	@./scripts/dev.sh stop
+
+dev-restart: ## Перезапустить dev-сервисы
+	@chmod +x scripts/dev.sh
+	@./scripts/dev.sh restart
+
+dev-logs: ## Показать логи Django и Vite
+	@tail -f .dev/django.log .dev/vite.log
 
 build: ## Собрать Docker образы
 	docker compose build

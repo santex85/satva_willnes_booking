@@ -1,0 +1,268 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap');
+
+:root {
+  /* Premium Dark Theme Color Tokens (HSL) */
+  --bg-dark: 222 47% 6%;
+  --card-dark: 222 47% 10%;
+  --border-dark: 217 32% 16%;
+  --text-primary-dark: 210 40% 98%;
+  --text-secondary-dark: 215 20% 65%;
+  --primary-dark: 172 80% 38%;
+  --primary-hover-dark: 172 80% 44%;
+  --primary-glow-dark: 172 80% 38% / 15%;
+  --accent-dark: 263 70% 50%;
+  --accent-glow-dark: 263 70% 50% / 15%;
+  
+  /* Status Colors */
+  --status-unconfirmed: 45 90% 45%;
+  --status-confirmed: 200 80% 40%;
+  --status-paid: 142 70% 35%;
+  --status-completed: 142 70% 35%;
+  --status-canceled: 0 80% 45%;
+
+  /* Active Theme Assignments (Defaults to Dark Mode for premium aesthetics) */
+  --bg: var(--bg-dark);
+  --card: var(--card-dark);
+  --border: var(--border-dark);
+  --text-primary: var(--text-primary-dark);
+  --text-secondary: var(--text-secondary-dark);
+  --primary: var(--primary-dark);
+  --primary-hover: var(--primary-hover-dark);
+  --primary-glow: var(--primary-glow-dark);
+  --accent: var(--accent-dark);
+  --accent-glow: var(--accent-glow-dark);
+
+  /* Fonts */
+  --font-title: 'Outfit', 'Inter', sans-serif;
+  --font-body: 'Inter', sans-serif;
+
+  /* Glassmorphism token */
+  --glass-bg: rgba(10, 14, 23, 0.65);
+  --glass-border: rgba(255, 255, 255, 0.06);
+  --glass-blur: blur(20px);
+}
+
+/* Base resets */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-body);
+}
+
+body {
+  background-color: hsl(var(--bg));
+  color: hsl(var(--text-primary));
+  min-height: 100vh;
+  overflow-x: hidden;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-title);
+  font-weight: 600;
+}
+
+/* Customized scrollbar for premium aesthetics */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: hsl(var(--bg));
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 99px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--primary));
+}
+
+/* Glassmorphism Card Style */
+.glass-card {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-radius: 16px;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-card:hover {
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.5);
+}
+
+/* Glow Elements */
+.glow-effect {
+  position: relative;
+}
+.glow-effect::before {
+  content: '';
+  position: absolute;
+  top: -5%;
+  left: -5%;
+  width: 110%;
+  height: 110%;
+  background: radial-gradient(circle, hsl(var(--primary) / 8%) 0%, transparent 70%);
+  z-index: -1;
+  pointer-events: none;
+}
+
+/* General Buttons */
+.btn-primary {
+  background: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--primary-hover)) 100%);
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 10px;
+  font-weight: 500;
+  font-family: var(--font-title);
+  cursor: pointer;
+  box-shadow: 0 4px 12px hsl(var(--primary) / 25%);
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px hsl(var(--primary) / 35%);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+}
+
+.btn-secondary {
+  background: transparent;
+  color: hsl(var(--text-primary));
+  border: 1px solid hsl(var(--border));
+  padding: 10px 20px;
+  border-radius: 10px;
+  font-weight: 500;
+  font-family: var(--font-title);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-secondary:hover {
+  background: hsl(var(--border));
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+/* Inputs and Forms */
+.form-group {
+  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.form-label {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: hsl(var(--text-secondary));
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.form-input {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid hsl(var(--border));
+  padding: 12px 16px;
+  border-radius: 10px;
+  color: white;
+  outline: none;
+  font-size: 0.95rem;
+  transition: all 0.2s ease;
+}
+
+.form-input:focus {
+  border-color: hsl(var(--primary));
+  box-shadow: 0 0 0 3px hsl(var(--primary) / 10%);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* FullCalendar styling overrides to fit premium dark theme */
+.fc {
+  --fc-border-color: hsl(var(--border)) !important;
+  --fc-daygrid-event-dot-color: hsl(var(--primary)) !important;
+  --fc-button-bg-color: transparent !important;
+  --fc-button-border-color: hsl(var(--border)) !important;
+  --fc-button-hover-bg-color: hsl(var(--border)) !important;
+  --fc-button-active-bg-color: hsl(var(--primary)) !important;
+  --fc-button-active-border-color: hsl(var(--primary)) !important;
+  font-family: var(--font-body);
+}
+
+.fc .fc-toolbar-title {
+  font-family: var(--font-title);
+  font-weight: 700;
+  font-size: 1.5rem !important;
+  color: hsl(var(--text-primary));
+}
+
+.fc .fc-button {
+  border-radius: 8px !important;
+  text-transform: capitalize;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.fc-theme-standard td, .fc-theme-standard th {
+  border-color: hsl(var(--border)) !important;
+}
+
+.fc-col-header-cell {
+  background: rgba(255, 255, 255, 0.01);
+  padding: 10px 0 !important;
+}
+
+.fc-col-header-cell-cushion {
+  color: hsl(var(--text-secondary)) !important;
+  font-weight: 600 !important;
+  font-size: 0.9rem;
+}
+
+.fc-timegrid-slot {
+  height: 48px !important;
+}
+
+.fc-event {
+  border-radius: 6px !important;
+  padding: 2px 6px !important;
+  font-size: 0.85rem !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  cursor: pointer;
+}
+
+.fc-event:hover {
+  transform: scale(1.02);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4) !important;
+  z-index: 100 !important;
+}
+
+/* Animations classes */
+.fade-in {
+  animation: fadeIn 0.4s ease-out forwards;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

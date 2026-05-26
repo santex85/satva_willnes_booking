@@ -74,6 +74,9 @@ server_info_*.md
 deploy_state.json
 deploy_states/
 
+# Local dev runtime (PIDs, logs)
+.dev/
+
 # Coverage reports
 htmlcov/
 .coverage

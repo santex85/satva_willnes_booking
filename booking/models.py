@@ -773,3 +773,7 @@ class BookingLog(models.Model):
     
     def __str__(self):
         return f"{self.booking.id} - {self.get_action_display()} ({timezone.localtime(self.created_at).strftime('%d.%m.%Y %H:%M')})"
+
+
+# Регистрируем модели, объявленные в отдельных модулях, чтобы Django их обнаружил.
+from .clinical_models import SOAPNote  # noqa: E402,F401

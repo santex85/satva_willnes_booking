@@ -89,8 +89,18 @@ export const getBookings = async () => {
   return data
 }
 
+export const createBooking = async (payload) => {
+  const { data } = await api.post('/bookings/', payload)
+  return data
+}
+
 export const updateBooking = async (id, payload) => {
   const { data } = await api.patch(`/bookings/${id}/`, payload)
+  return data
+}
+
+export const deleteBooking = async (id) => {
+  const { data } = await api.delete(`/bookings/${id}/`)
   return data
 }
 
@@ -101,6 +111,21 @@ export const getGuests = async () => {
 
 export const createGuest = async (payload) => {
   const { data } = await api.post('/guests/', payload)
+  return data
+}
+
+export const getSoapNotes = async (guestId) => {
+  const { data } = await api.get(`/soap-notes/?guest=${guestId}`)
+  return data
+}
+
+export const createSoapNote = async (payload) => {
+  const { data } = await api.post('/soap-notes/', payload)
+  return data
+}
+
+export const updateSoapNote = async (id, payload) => {
+  const { data } = await api.patch(`/soap-notes/${id}/`, payload)
   return data
 }
 

@@ -45,7 +45,9 @@ import {
   login as apiLogin,
   logout as apiLogout,
   getBookings,
+  createBooking,
   updateBooking,
+  deleteBooking,
   getGuests,
   createGuest,
   getSpecialists,
@@ -56,6 +58,9 @@ import {
   getGuestStatistics,
   mergeGuests,
   downloadCsvReport,
+  getSoapNotes,
+  createSoapNote,
+  updateSoapNote,
 } from './api'
 
 import './App.css'
@@ -157,19 +162,22 @@ export default function App() {
   const [editForm, setEditForm] = useState(null)
   const [savingBooking, setSavingBooking] = useState(false)
 
+  const [selectedSoapGuestId, setSelectedSoapGuestId] = useState('')
+  const [currentSoapNoteId, setCurrentSoapNoteId] = useState(null)
+
   const [selectedBodyParts, setSelectedBodyParts] = useState({
     head: false,
-    neck: true,
-    shoulders: true,
+    neck: false,
+    shoulders: false,
     thoracic: false,
-    lumbar: true,
+    lumbar: false,
     legs: false
   })
   const [soapData, setSoapData] = useState({
-    subjective: 'Гость жалуется на хроническую боль в области шеи и плечевого пояса после длительной работы за компьютером. Просит усиленное давление в пояснице.',
-    objective: 'Пальпация выявила выраженный мышечный тонус (гипертонус) трапециевидной мышцы и спазм широчайших мышц спины. Локальные триггерные точки в поясничной области.',
-    assessment: 'Миофасциальный болевой синдром шейно-грудного отдела. Нарушение осанки.',
-    plan: 'Рекомендован курс из 5 сеансов глубокого миофасциального массажа спины (90 мин) с интервалом в 3 дня. Рекомендована гимнастика для шеи.'
+    subjective: '',
+    objective: '',
+    assessment: '',
+    plan: ''
   })
 
   const [cabinets, setCabinets] = useState([])
@@ -348,6 +356,7 @@ export default function App() {
   const buildEditFormFromEvent = (event) => {
     const props = event?.extendedProps || {}
     return {
+      guestId: props.guestId || '',
       guestName: props.guestName || '',
       room: props.room || '',
       specialistId: props.specialistId || specialists[0]?.id || '',
@@ -374,6 +383,49 @@ export default function App() {
     setIsModalOpen(true)
   }
 
+  const handleDateSelect = (selectInfo) => {
+    const calendarApi = selectInfo.view.calendar
+    calendarApi.unselect()
+
+    const newForm = {
+      guestId: clients[0]?.id || '',
+      guestName: clients[0]?.name || '',
+      room: '',
+      specialistId: specialists[0]?.id || '',
+      specialist: specialists[0]?.name || '',
+      cabinetId: cabinets[0]?.id || '',
+      cabinet: cabinets[0]?.name || '',
+      serviceVariantId: serviceVariants[0]?.id || '',
+      service: serviceVariants[0]?.service_name || '',
+      duration: serviceVariants[0]?.duration_minutes || 60,
+      status: 'confirmed',
+      comment: '',
+      startLocal: formatDateTimeLocal(selectInfo.start),
+    }
+
+    setSelectedEvent({
+      id: 'new',
+      start: selectInfo.start,
+      extendedProps: {
+        guestId: '',
+        guestName: '',
+        room: '',
+        specialistId: specialists[0]?.id || '',
+        specialist: specialists[0]?.name || '',
+        cabinetId: cabinets[0]?.id || '',
+        cabinet: cabinets[0]?.name || '',
+        serviceVariantId: serviceVariants[0]?.id || '',
+        service: '',
+        duration: 60,
+        status: 'confirmed',
+        comment: '',
+      }
+    })
+    setEditForm(newForm)
+    setModalMode('edit')
+    setIsModalOpen(true)
+  }
+
   const closeBookingModal = () => {
     setIsModalOpen(false)
     setModalMode('view')
@@ -388,10 +440,11 @@ export default function App() {
 
   const handleSaveBooking = async (e) => {
     e.preventDefault()
-    if (!selectedEvent || !editForm) return
+    if (!editForm) return
     setSavingBooking(true)
     try {
-      await updateBooking(selectedEvent.id, {
+      const payload = {
+        guest: editForm.guestId ? Number(editForm.guestId) : null,
         guest_name: editForm.guestName,
         guest_room_number: editForm.room,
         specialist: Number(editForm.specialistId),
@@ -400,13 +453,102 @@ export default function App() {
         start_time: new Date(editForm.startLocal).toISOString(),
         status: editForm.status,
         comment: editForm.comment,
-      })
+      }
+
+      if (selectedEvent && selectedEvent.id !== 'new') {
+        await updateBooking(selectedEvent.id, payload)
+      } else {
+        await createBooking(payload)
+      }
       await loadBookings()
       closeBookingModal()
     } catch (err) {
       setAppError(err.response?.data ? JSON.stringify(err.response.data) : err.message)
     } finally {
       setSavingBooking(false)
+    }
+  }
+
+  const handleDeleteBooking = async () => {
+    if (!selectedEvent || selectedEvent.id === 'new') return
+    if (!window.confirm('Вы уверены, что хотите отменить это бронирование?')) return
+    
+    setSavingBooking(true)
+    try {
+      await deleteBooking(selectedEvent.id)
+      await loadBookings()
+      closeBookingModal()
+    } catch (err) {
+      setAppError(err.response?.data ? JSON.stringify(err.response.data) : err.message)
+    } finally {
+      setSavingBooking(false)
+    }
+  }
+
+  const handleLoadSoapNotes = useCallback(async (guestId) => {
+    if (!guestId) {
+      setCurrentSoapNoteId(null)
+      setSoapData({ subjective: '', objective: '', assessment: '', plan: '' })
+      setSelectedBodyParts({ head: false, neck: false, shoulders: false, thoracic: false, lumbar: false, legs: false })
+      return
+    }
+    try {
+      const notes = await getSoapNotes(guestId)
+      if (notes && notes.length > 0) {
+        const latest = notes[0]
+        setCurrentSoapNoteId(latest.id)
+        setSoapData({
+          subjective: latest.subjective || '',
+          objective: latest.objective || '',
+          assessment: latest.assessment || '',
+          plan: latest.plan || '',
+        })
+        setSelectedBodyParts(latest.body_map_data || {
+          head: false, neck: false, shoulders: false, thoracic: false, lumbar: false, legs: false
+        })
+      } else {
+        setCurrentSoapNoteId(null)
+        setSoapData({ subjective: '', objective: '', assessment: '', plan: '' })
+        setSelectedBodyParts({ head: false, neck: false, shoulders: false, thoracic: false, lumbar: false, legs: false })
+      }
+    } catch (err) {
+      console.error('Error loading SOAP notes:', err)
+    }
+  }, [specialists])
+
+  const handleSaveSoapNote = async () => {
+    if (!selectedSoapGuestId) {
+      alert('Пожалуйста, выберите гостя для сохранения SOAP-карты')
+      return
+    }
+    
+    const specialistId = specialists[0]?.id
+    if (!specialistId) {
+      alert('Не найдены специалисты для создания SOAP-карты. Пожалуйста, создайте специалиста в админ-панели.')
+      return
+    }
+
+    const payload = {
+      guest: Number(selectedSoapGuestId),
+      specialist: Number(specialistId),
+      subjective: soapData.subjective,
+      objective: soapData.objective,
+      assessment: soapData.assessment,
+      plan: soapData.plan,
+      body_map_data: selectedBodyParts,
+    }
+
+    try {
+      if (currentSoapNoteId) {
+        await updateSoapNote(currentSoapNoteId, payload)
+        alert('SOAP-карта гостя успешно обновлена на сервере!')
+      } else {
+        const newNote = await createSoapNote(payload)
+        setCurrentSoapNoteId(newNote.id)
+        alert('Новая SOAP-карта гостя успешно создана на сервере!')
+      }
+    } catch (err) {
+      alert('Ошибка сохранения SOAP-карты: ' + (err.response?.data ? JSON.stringify(err.response.data) : err.message))
     }
   }
 
@@ -1066,6 +1208,7 @@ export default function App() {
                     dayMaxEvents={true}
                     allDaySlot={false}
                     eventClick={handleEventClick}
+                    select={handleDateSelect}
                   />
                 </div>
               )}
@@ -1148,7 +1291,15 @@ export default function App() {
                               }}>{client.status}</span>
                             </td>
                             <td style={{ padding: '12px 15px' }}>
-                              <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: '0.75rem' }} onClick={() => setActiveTab('clinical')}>
+                              <button
+                                className="btn-secondary"
+                                style={{ padding: '6px 12px', fontSize: '0.75rem' }}
+                                onClick={() => {
+                                  setSelectedSoapGuestId(client.id)
+                                  handleLoadSoapNotes(client.id)
+                                  setActiveTab('clinical')
+                                }}
+                              >
                                 Открыть SOAP-карту
                               </button>
                             </td>
@@ -1257,11 +1408,29 @@ export default function App() {
                   {/* Right Column: SOAP Text Forms */}
                   <div className="glass-card" style={{ padding: '30px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
                     <div style={{ borderBottom: '1px solid hsl(var(--border))', paddingBottom: '15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
                         <h3 style={{ fontSize: '1.25rem', color: 'white' }}>Электронная SOAP карта</h3>
-                        <p style={{ fontSize: '0.8rem', color: 'hsl(var(--text-secondary))' }}>Пациент: <span style={{ color: 'white', fontWeight: 600 }}>Александр Черемикин (Комната 302)</span></p>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <span style={{ fontSize: '0.85rem', color: 'hsl(var(--text-secondary))' }}>Пациент:</span>
+                          <select
+                            className="form-input"
+                            style={{ padding: '6px 12px', background: 'rgba(255,255,255,0.03)', border: '1px solid hsl(var(--border))', borderRadius: '6px', color: 'white', outline: 'none', fontSize: '0.85rem' }}
+                            value={selectedSoapGuestId}
+                            onChange={(e) => {
+                              setSelectedSoapGuestId(e.target.value)
+                              handleLoadSoapNotes(e.target.value)
+                            }}
+                          >
+                            <option value="">-- Выберите гостя из базы --</option>
+                            {clients.map((c) => (
+                              <option key={c.id} value={c.id}>{c.name}</option>
+                            ))}
+                          </select>
+                        </div>
                       </div>
-                      <span style={{ fontSize: '0.75rem', color: 'hsl(var(--primary))', fontWeight: 600 }}>Сеанс 26.05.2026</span>
+                      <span style={{ fontSize: '0.75rem', color: 'hsl(var(--primary))', fontWeight: 600 }}>
+                        {currentSoapNoteId ? 'Карта загружена из БД' : 'Новая запись'}
+                      </span>
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
@@ -1313,8 +1482,8 @@ export default function App() {
                     </div>
 
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '15px' }}>
-                      <button className="btn-secondary">Печать карты</button>
-                      <button className="btn-primary" onClick={() => alert('SOAP карта гостя успешно сохранена в зашифрованной схеме базы данных!')}>Сохранить изменения</button>
+                      <button className="btn-secondary" onClick={() => window.print()}>Печать карты</button>
+                      <button className="btn-primary" onClick={handleSaveSoapNote}>Сохранить изменения</button>
                     </div>
                   </div>
 
@@ -1582,7 +1751,9 @@ export default function App() {
             
             <div style={{ borderBottom: '1px solid hsl(var(--border))', paddingBottom: '15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h3 style={{ fontSize: '1.25rem', color: 'white' }}>
-                {modalMode === 'edit'
+                {selectedEvent.id === 'new'
+                  ? 'Новая запись'
+                  : modalMode === 'edit'
                   ? `Редактирование #${selectedEvent.id}`
                   : `Детали бронирования #${selectedEvent.id}`}
               </h3>
@@ -1642,6 +1813,16 @@ export default function App() {
                 </div>
 
                 <div style={{ display: 'flex', gap: '15px', marginTop: '15px' }}>
+                  {selectedEvent.id !== 'new' && (
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      style={{ flex: 1, justifyContent: 'center', borderColor: '#ef4444', color: '#ef4444' }}
+                      onClick={handleDeleteBooking}
+                    >
+                      Отменить
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="btn-secondary"
@@ -1652,7 +1833,7 @@ export default function App() {
                       startEditBooking()
                     }}
                   >
-                    Редактировать запись
+                    Редактировать
                   </button>
                   <button
                     type="button"
@@ -1667,15 +1848,38 @@ export default function App() {
 
             <div style={{ display: modalMode === 'edit' && editForm ? 'block' : 'none' }}>
               <form onSubmit={handleSaveBooking} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">Имя гостя</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    value={editForm.guestName}
-                    onChange={(e) => setEditForm({ ...editForm, guestName: e.target.value })}
-                    required
-                  />
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Выбор гостя из базы</label>
+                    <select
+                      className="form-input"
+                      value={editForm.guestId}
+                      onChange={(e) => {
+                        const client = clients.find((c) => String(c.id) === e.target.value)
+                        setEditForm({
+                          ...editForm,
+                          guestId: e.target.value,
+                          guestName: client?.name || editForm.guestName,
+                        })
+                      }}
+                    >
+                      <option value="">-- Выбрать гостя --</option>
+                      {clients.map((c) => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Имя гостя (для отображения)</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      value={editForm.guestName}
+                      onChange={(e) => setEditForm({ ...editForm, guestName: e.target.value })}
+                      placeholder="Имя / Фамилия"
+                      required
+                    />
+                  </div>
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>

@@ -773,3 +773,82 @@ class BookingLog(models.Model):
     
     def __str__(self):
         return f"{self.booking.id} - {self.get_action_display()} ({timezone.localtime(self.created_at).strftime('%d.%m.%Y %H:%M')})"
+
+
+class UserApiKey(models.Model):
+    """Персональный API-ключ пользователя (действует от его имени с его правами)."""
+    PREFIX_DISPLAY_LEN = 12
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='api_keys',
+        verbose_name='Пользователь',
+    )
+    name = models.CharField(max_length=100, verbose_name='Название')
+    prefix = models.CharField(max_length=16, db_index=True, verbose_name='Префикс ключа')
+    key_hash = models.CharField(max_length=64, verbose_name='Хеш ключа')
+    is_active = models.BooleanField(default=True, verbose_name='Активен')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='Создан')
+    last_used_at = models.DateTimeField(null=True, blank=True, verbose_name='Последнее использование')
+    expires_at = models.DateTimeField(null=True, blank=True, verbose_name='Истекает')
+
+    class Meta:
+        verbose_name = 'API-ключ'
+        verbose_name_plural = 'API-ключи'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', 'is_active']),
+            models.Index(fields=['prefix']),
+        ]
+
+    def __str__(self):
+        return f"{self.name} ({self.prefix}…) — {self.user.username}"
+
+    @classmethod
+    def generate_key_pair(cls):
+        """Возвращает (полный_ключ, prefix, key_hash)."""
+        import hashlib
+        import secrets
+        raw = f"satva_{secrets.token_urlsafe(32)}"
+        prefix = raw[: cls.PREFIX_DISPLAY_LEN]
+        key_hash = hashlib.sha256(raw.encode()).hexdigest()
+        return raw, prefix, key_hash
+
+    @classmethod
+    def create_for_user(cls, user, name, expires_at=None):
+        raw, prefix, key_hash = cls.generate_key_pair()
+        obj = cls.objects.create(
+            user=user,
+            name=name.strip(),
+            prefix=prefix,
+            key_hash=key_hash,
+            expires_at=expires_at,
+        )
+        obj._plain_key = raw  # только для ответа при создании
+        return obj
+
+    @classmethod
+    def authenticate(cls, raw_key):
+        """Проверяет ключ и возвращает UserApiKey или None."""
+        import hashlib
+        if not raw_key or not raw_key.startswith('satva_'):
+            return None
+        prefix = raw_key[: cls.PREFIX_DISPLAY_LEN]
+        key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
+        try:
+            api_key = cls.objects.select_related('user').get(
+                prefix=prefix,
+                key_hash=key_hash,
+                is_active=True,
+            )
+        except cls.DoesNotExist:
+            return None
+        if api_key.expires_at and timezone.now() >= api_key.expires_at:
+            return None
+        if not api_key.user.is_active:
+            return None
+        return api_key
+
+    def touch_last_used(self):
+        UserApiKey.objects.filter(pk=self.pk).update(last_used_at=timezone.now())

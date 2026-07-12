@@ -24,6 +24,7 @@ from .models import (
     DeletedBooking,
     BookingLog,
     Guest,
+    UserApiKey,
 )
 
 
@@ -435,6 +436,18 @@ admin.site.register(Cabinet)
 admin.site.register(SpecialistSchedule, SpecialistScheduleAdmin)
 admin.site.register(ServiceVariant)
 admin.site.register(CabinetClosure)
+
+
+@admin.register(UserApiKey)
+class UserApiKeyAdmin(admin.ModelAdmin):
+    list_display = ('name', 'user', 'prefix', 'is_active', 'created_at', 'last_used_at', 'expires_at')
+    list_filter = ('is_active', 'created_at')
+    search_fields = ('name', 'user__username', 'prefix')
+    readonly_fields = ('prefix', 'key_hash', 'created_at', 'last_used_at')
+    raw_id_fields = ('user',)
+
+    def has_add_permission(self, request):
+        return False
 
 
 @admin.register(CalendarNote)

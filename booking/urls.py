@@ -2,13 +2,10 @@
 URL configuration for booking app
 """
 from django.urls import path
-from rest_framework_simplejwt.views import (
-    TokenObtainPairView,
-    TokenRefreshView,
-)
 import logging
 
-from . import views, api_views
+from . import views
+from . import api_key_views
 
 logger = logging.getLogger(__name__)
 
@@ -46,17 +43,15 @@ urlpatterns = [
     path('reports/download-guest/', views.download_guest_report_view, name='download_guest_report'),
     path('reports/merge-guests-db/', views.merge_guests_in_db_view, name='merge_guests_in_db'),
     path('my-schedule/', views.my_schedule_view, name='my_schedule'),
-    
+
     # Deleted bookings
     path('deleted-bookings/', views.deleted_bookings_view, name='deleted_bookings'),
     path('deleted-bookings/<int:pk>/', views.deleted_booking_detail_view, name='deleted_booking_detail'),
     path('deleted-bookings/<int:pk>/restore/', views.restore_booking_view, name='restore_booking'),
     path('deleted-bookings/<int:pk>/delete/', views.permanently_delete_view, name='permanently_delete'),
-    
-    # API endpoints
-    path('api/v1/my-schedule/', api_views.MyScheduleAPI.as_view(), name='api_my_schedule'),
-    path('api/v1/guests/autocomplete/', api_views.guest_autocomplete_view, name='api_guest_autocomplete'),
-    path('api/v1/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
-    path('api/v1/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
-]
 
+    # API-ключи (профиль)
+    path('profile/api-keys/', api_key_views.api_keys_profile_view, name='api_keys_profile'),
+    path('profile/api-keys/create/', api_key_views.api_key_create_view, name='api_key_create'),
+    path('profile/api-keys/<int:pk>/revoke/', api_key_views.api_key_revoke_view, name='api_key_revoke'),
+]

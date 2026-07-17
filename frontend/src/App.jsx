@@ -20,7 +20,9 @@ import {
   Plus,
   BarChart3,
   Download,
-  GitMerge
+  GitMerge,
+  Star,
+  Quote
 } from 'lucide-react'
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
@@ -61,6 +63,7 @@ import {
   getSoapNotes,
   createSoapNote,
   updateSoapNote,
+  registerSalon,
 } from './api'
 
 import './App.css'
@@ -161,6 +164,7 @@ export default function App() {
   const [modalMode, setModalMode] = useState('view')
   const [editForm, setEditForm] = useState(null)
   const [savingBooking, setSavingBooking] = useState(false)
+  const [featuresTab, setFeaturesTab] = useState('f-calendar')
 
   const [selectedSoapGuestId, setSelectedSoapGuestId] = useState('')
   const [currentSoapNoteId, setCurrentSoapNoteId] = useState(null)
@@ -205,6 +209,36 @@ export default function App() {
   const [mergeDisplayName, setMergeDisplayName] = useState('')
   const [mergeLoading, setMergeLoading] = useState(false)
   const [mergeError, setMergeError] = useState('')
+
+  // Onboarding Wizard States & Handlers
+  const [wizardStep, setWizardStep] = useState(0) // 0 - landing/no wizard, 1..4 - onboarding steps
+  const [onboardingData, setOnboardingData] = useState({
+    name: '',
+    subdomain: '',
+    email: '',
+    password: '',
+    cabinets: ['Массажный кабинет Бали', 'VIP Спа-зона с джакузи'],
+    services: ['massage', 'facial', 'aromatherapy'],
+  })
+  const [onboardingLoading, setOnboardingLoading] = useState(false)
+  const [onboardingError, setOnboardingError] = useState('')
+  const [onboardingResult, setOnboardingResult] = useState(null)
+
+  const handleRegisterSalon = async (e) => {
+    if (e) e.preventDefault()
+    setOnboardingLoading(true)
+    setOnboardingError('')
+    try {
+      const res = await registerSalon(onboardingData)
+      setOnboardingResult(res)
+      setWizardStep(4) // Успех
+    } catch (err) {
+      setOnboardingError(err.response?.data?.error || err.message || 'Ошибка регистрации салона')
+      setWizardStep(1) // Вернуть на Шаг 1 для исправления ошибок
+    } finally {
+      setOnboardingLoading(false)
+    }
+  }
 
   // ROI Calculations
   const standardNoShowRate = 0.15 // 15%
@@ -631,8 +665,319 @@ export default function App() {
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       
+      {/* WIZARD ONBOARDING VIEW */}
+      {wizardStep > 0 && (
+        <div style={{
+          minHeight: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'radial-gradient(circle at center, rgba(13, 148, 136, 0.08) 0%, transparent 70%)',
+          padding: '40px 20px',
+        }} className="fade-in">
+          
+          <div className="glass-card" style={{ padding: '40px', width: '100%', maxWidth: '640px', position: 'relative' }}>
+            
+            {/* Header progress bar */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Activity size={20} color="hsl(var(--primary))" />
+                <span style={{ fontSize: '1rem', fontWeight: 800, fontFamily: 'var(--font-title)' }}>
+                  SATVA<span style={{ color: 'hsl(var(--primary))' }}>ONBOARDING</span>
+                </span>
+              </div>
+              <button 
+                onClick={() => setWizardStep(0)}
+                style={{ background: 'transparent', border: 'none', color: 'hsl(var(--text-secondary))', cursor: 'pointer', fontSize: '0.9rem' }}
+              >
+                Отмена
+              </button>
+            </div>
+
+            {/* Stepper indicators */}
+            {wizardStep < 4 && (
+              <div style={{ display: 'flex', gap: '10px', marginBottom: '40px' }}>
+                {[1, 2, 3].map((step) => (
+                  <div key={step} style={{
+                    flex: 1,
+                    height: '4px',
+                    borderRadius: '2px',
+                    background: step <= wizardStep ? 'hsl(var(--primary))' : 'hsl(var(--border))',
+                    transition: 'all 0.3s ease'
+                  }}></div>
+                ))}
+              </div>
+            )}
+
+            {/* STEP 1: ACCOUNT DETAILS */}
+            {wizardStep === 1 && (
+              <div className="fade-in">
+                <h2 style={{ fontSize: '1.75rem', color: 'white', marginBottom: '10px' }}>Создайте ваш велнес-объект</h2>
+                <p style={{ fontSize: '0.9rem', color: 'hsl(var(--text-secondary))', marginBottom: '30px' }}>Заполните основные данные о вашем спа-салоне или отеле для автоматического развертывания системы.</p>
+                
+                <form onSubmit={(e) => { e.preventDefault(); setWizardStep(2); }}>
+                  <div className="form-group">
+                    <label className="form-label">Название спа-салона или отеля</label>
+                    <input 
+                      type="text" 
+                      className="form-input" 
+                      placeholder="Напр. Lotus Wellness & Spa" 
+                      value={onboardingData.name}
+                      onChange={(e) => setOnboardingData({
+                        ...onboardingData,
+                        name: e.target.value,
+                        subdomain: onboardingData.subdomain || e.target.value.toLowerCase().replace(/[^a-z0-9]/g, '-')
+                      })}
+                      required
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Адрес субдомена (латиница)</label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <input 
+                        type="text" 
+                        className="form-input" 
+                        style={{ flex: 1 }}
+                        placeholder="lotus-spa" 
+                        value={onboardingData.subdomain}
+                        onChange={(e) => setOnboardingData({ ...onboardingData, subdomain: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '') })}
+                        required
+                      />
+                      <span style={{ color: 'hsl(var(--text-secondary))', fontSize: '0.9rem', fontFamily: 'monospace' }}>.localhost:8002</span>
+                    </div>
+                    <span style={{ fontSize: '0.75rem', color: 'hsl(var(--text-secondary))' }}>По этому адресу будет доступен ваш изолированный личный кабинет.</span>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                    <div className="form-group">
+                      <label className="form-label">Email администратора</label>
+                      <input 
+                        type="email" 
+                        className="form-input" 
+                        placeholder="admin@hotel.com" 
+                        value={onboardingData.email}
+                        onChange={(e) => setOnboardingData({ ...onboardingData, email: e.target.value })}
+                        required
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Пароль администратора</label>
+                      <input 
+                        type="password" 
+                        className="form-input" 
+                        placeholder="Минимум 6 символов" 
+                        value={onboardingData.password}
+                        onChange={(e) => setOnboardingData({ ...onboardingData, password: e.target.value })}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '20px' }}>
+                    <button type="submit" className="btn-primary">
+                      Продолжить <ChevronRight size={16} />
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+
+            {/* STEP 2: CABINETS SETUP */}
+            {wizardStep === 2 && (
+              <div className="fade-in">
+                <h2 style={{ fontSize: '1.75rem', color: 'white', marginBottom: '10px' }}>Настройка кабинетов и спа-зон</h2>
+                <p style={{ fontSize: '0.9rem', color: 'hsl(var(--text-secondary))', marginBottom: '30px' }}>Укажите спа-кабинеты вашего отеля для интеллектуального распределения броней и предотвращения овербукинга.</p>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '30px' }}>
+                  {onboardingData.cabinets.map((cab, idx) => (
+                    <div key={idx} style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+                      <input 
+                        type="text" 
+                        className="form-input" 
+                        style={{ flex: 1 }}
+                        value={cab}
+                        onChange={(e) => {
+                          const newCabs = [...onboardingData.cabinets]
+                          newCabs[idx] = e.target.value
+                          setOnboardingData({ ...onboardingData, cabinets: newCabs })
+                        }}
+                        placeholder="Название кабинета"
+                        required
+                      />
+                      <button 
+                        type="button" 
+                        className="btn-secondary" 
+                        style={{ padding: '12px', color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.2)' }}
+                        onClick={() => setOnboardingData({ ...onboardingData, cabinets: onboardingData.cabinets.filter((_, i) => i !== idx) })}
+                        disabled={onboardingData.cabinets.length <= 1}
+                      >
+                        Удалить
+                      </button>
+                    </div>
+                  ))}
+                  
+                  <button 
+                    type="button" 
+                    className="btn-secondary" 
+                    style={{ borderStyle: 'dashed', justifyContent: 'center' }}
+                    onClick={() => setOnboardingData({ ...onboardingData, cabinets: [...onboardingData.cabinets, `Кабинет ${onboardingData.cabinets.length + 1}`] })}
+                  >
+                    + Добавить кабинет
+                  </button>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '20px' }}>
+                  <button type="button" className="btn-secondary" onClick={() => setWizardStep(1)}>
+                    Назад
+                  </button>
+                  <button type="button" className="btn-primary" onClick={() => setWizardStep(3)}>
+                    Продолжить <ChevronRight size={16} />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* STEP 3: PRE-LOADED SERVICES */}
+            {wizardStep === 3 && (
+              <div className="fade-in">
+                <h2 style={{ fontSize: '1.75rem', color: 'white', marginBottom: '10px' }}>Каталог предустановленных услуг</h2>
+                <p style={{ fontSize: '0.9rem', color: 'hsl(var(--text-secondary))', marginBottom: '20px' }}>Выберите спа-услуги, которыми вы хотите наполнить систему. Мы автоматически настроим для них варианты длительности и цен.</p>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', marginBottom: '30px' }}>
+                  {[
+                    { id: 'massage', title: 'Тайский велнес-массаж', desc: 'Процедуры 60 и 90 минут для оздоровления тела и снятия гипертонуса.' },
+                    { id: 'facial', title: 'Премиальный косметологический уход', desc: 'Уходовые спа-процедуры для лица, очищение и лифтинг.' },
+                    { id: 'aromatherapy', title: 'Ароматерапия & СПА-ритуал', desc: 'Расслабляющий массаж с ароматическими маслами в VIP кабинетах.' }
+                  ].map((srv) => (
+                    <label key={srv.id} className="glass-card" style={{ padding: '20px', display: 'flex', gap: '15px', cursor: 'pointer', border: onboardingData.services.includes(srv.id) ? '1px solid hsl(var(--primary))' : '1px solid var(--glass-border)' }}>
+                      <input 
+                        type="checkbox" 
+                        checked={onboardingData.services.includes(srv.id)}
+                        style={{ accentColor: 'hsl(var(--primary))', width: '18px', height: '18px', marginTop: '3px' }}
+                        onChange={() => {
+                          const active = onboardingData.services.includes(srv.id)
+                          setOnboardingData({
+                            ...onboardingData,
+                            services: active 
+                              ? onboardingData.services.filter(id => id !== srv.id)
+                              : [...onboardingData.services, srv.id]
+                          })
+                        }}
+                      />
+                      <div>
+                        <h4 style={{ color: 'white', fontSize: '1rem', marginBottom: '4px' }}>{srv.title}</h4>
+                        <p style={{ color: 'hsl(var(--text-secondary))', fontSize: '0.8rem' }}>{srv.desc}</p>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+
+                {onboardingError && (
+                  <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '8px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#fca5a5', fontSize: '0.9rem' }}>
+                    {onboardingError}
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '20px' }}>
+                  <button type="button" className="btn-secondary" onClick={() => setWizardStep(2)} disabled={onboardingLoading}>
+                    Назад
+                  </button>
+                  <button 
+                    type="button" 
+                    className="btn-primary" 
+                    onClick={handleRegisterSalon}
+                    disabled={onboardingLoading || onboardingData.services.length === 0}
+                  >
+                    {onboardingLoading ? 'Развертывание системы...' : 'Запустить мой СПА-центр 🚀'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* STEP 4: SUCCESS ONBOARDING */}
+            {wizardStep === 4 && onboardingResult && (
+              <div className="fade-in" style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '20px', alignItems: 'center', padding: '20px 0' }}>
+                <div style={{
+                  background: 'rgba(16, 185, 129, 0.1)',
+                  width: '60px',
+                  height: '60px',
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  border: '2px solid #10b981',
+                  marginBottom: '10px'
+                }}>
+                  <CheckCircle size={32} color="#10b981" />
+                </div>
+                
+                <h2 style={{ fontSize: '1.75rem', color: 'white' }}>База данных успешно развернута!</h2>
+                <p style={{ fontSize: '1rem', color: 'hsl(var(--text-secondary))', maxWidth: '480px' }}>
+                  Для вашего спа-отеля создана изолированная схема базы данных и настроен выделенный рабочий домен:
+                </p>
+
+                <div style={{
+                  background: 'rgba(255, 255, 255, 0.02)',
+                  border: '1px solid hsl(var(--border))',
+                  borderRadius: '12px',
+                  padding: '20px',
+                  width: '100%',
+                  textAlign: 'left',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '10px'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'hsl(var(--text-secondary))' }}>Название салона:</span>
+                    <strong style={{ color: 'white' }}>{onboardingData.name}</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'hsl(var(--text-secondary))' }}>Ваш домен:</span>
+                    <a 
+                      href={`http://${onboardingResult.domain}:8002`} 
+                      style={{ color: 'hsl(var(--primary))', textDecoration: 'underline', fontWeight: 600 }}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      {onboardingResult.domain}
+                    </a>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'hsl(var(--text-secondary))' }}>Email администратора:</span>
+                    <strong style={{ color: 'white' }}>{onboardingData.email}</strong>
+                  </div>
+                </div>
+
+                <div style={{
+                  background: 'rgba(245, 158, 11, 0.1)',
+                  border: '1px solid rgba(245, 158, 11, 0.2)',
+                  color: '#fbbf24',
+                  fontSize: '0.85rem',
+                  padding: '12px',
+                  borderRadius: '8px',
+                  marginTop: '10px',
+                  maxWidth: '480px'
+                }}>
+                  ⚠️ <strong>Важно:</strong> для корректной работы изолированной базы данных по субдоменам на вашем локальном компьютере, перейдите по ссылке выше.
+                </div>
+
+                <a 
+                  href={`http://${onboardingResult.domain}:8002/`} 
+                  className="btn-primary" 
+                  style={{ marginTop: '20px', width: '100%', justifyContent: 'center' }}
+                >
+                  Перейти в личный кабинет <ChevronRight size={16} />
+                </a>
+              </div>
+            )}
+
+          </div>
+        </div>
+      )}
+
       {/* LANDING PAGE VIEW */}
-      {view === 'landing' && (
+      {view === 'landing' && wizardStep === 0 && (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }} className="fade-in">
           
           {/* Landing Header */}
@@ -661,9 +1006,14 @@ export default function App() {
                 SATVA<span style={{ color: 'hsl(var(--primary))' }}>WELLNESS</span>
               </span>
             </div>
-            <button className="btn-secondary" onClick={() => setView('login')}>
-              <Lock size={16} /> Войти в кабинет
-            </button>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button className="btn-secondary" onClick={() => setView('login')}>
+                <Lock size={16} /> Войти
+              </button>
+              <button className="btn-primary" onClick={() => setWizardStep(1)}>
+                Регистрация салона
+              </button>
+            </div>
           </header>
 
           {/* Hero section */}
@@ -696,7 +1046,7 @@ export default function App() {
                   Satva Wellness — это первая специализированная B2B SaaS-система для спа-салонов, велнес-клубов и отелей. Уникальный двойной контроль ресурсов: автоматический учет загрузки мастеров, доступности массажных кабинетов и буферного времени уборки.
                 </p>
                 <div style={{ display: 'flex', gap: '15px' }}>
-                  <button className="btn-primary" onClick={() => setView('login')}>
+                  <button className="btn-primary" onClick={() => setWizardStep(1)}>
                     Попробовать бесплатно <ChevronRight size={16} />
                   </button>
                   <a href="#roi-calculator" className="btn-secondary">
@@ -744,6 +1094,119 @@ export default function App() {
                       <h3 style={{ fontSize: '1.5rem', color: '#10b981', marginTop: '5px' }}>+46,200 ₽</h3>
                     </div>
                   </div>
+                </div>
+              </div>
+            </section>
+
+            {/* INLINE PREMIUM FEATURES WALKTHROUGH */}
+            <section className="glass-card" style={{ padding: '40px', marginBottom: '80px' }}>
+              <div style={{ textAlign: 'center', marginBottom: '40px' }}>
+                <span style={{ color: 'hsl(var(--primary))', fontSize: '0.85rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '10px' }}>
+                  Функционал платформы
+                </span>
+                <h2 style={{ fontSize: '2rem' }}>Все инструменты управления в одном окне</h2>
+              </div>
+
+              {/* Tab headers */}
+              <div style={{ display: 'flex', justifyContent: 'center', gap: '15px', marginBottom: '40px' }}>
+                {[
+                  { id: 'f-calendar', label: 'Интеллектуальный календарь' },
+                  { id: 'f-soap', label: 'Анатомические SOAP-карты' },
+                  { id: 'f-analytics', label: 'Сквозная аналитика' }
+                ].map(tab => (
+                  <button 
+                    key={tab.id}
+                    className="btn-secondary" 
+                    style={{ 
+                      background: featuresTab === tab.id ? 'hsl(var(--primary) / 10%)' : 'transparent',
+                      borderColor: featuresTab === tab.id ? 'hsl(var(--primary))' : 'hsl(var(--border))',
+                      color: featuresTab === tab.id ? 'white' : 'hsl(var(--text-secondary))'
+                    }}
+                    onClick={() => setFeaturesTab(tab.id)}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Tab contents */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '40px', alignItems: 'center' }}>
+                {featuresTab === 'f-calendar' && (
+                  <div className="fade-in">
+                    <h3 style={{ fontSize: '1.5rem', color: 'white', marginBottom: '15px' }}>Двухфакторный учет ресурсов</h3>
+                    <p style={{ color: 'hsl(var(--text-secondary))', marginBottom: '20px', fontSize: '0.95rem' }}>
+                      В отличие от стандартных систем, Satva одновременно проверяет занятость специалиста и доступность нужного кабинета с учетом буферного времени на уборку (15–30 минут).
+                    </p>
+                    <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '0.9rem', color: 'hsl(var(--text-secondary))' }}>
+                      <li><CheckCircle size={14} color="#10b981" style={{ marginRight: '8px', verticalAlign: 'middle' }} /> Интеллектуальный поиск свободных окон</li>
+                      <li><CheckCircle size={14} color="#10b981" style={{ marginRight: '8px', verticalAlign: 'middle' }} /> Управление сменами и графиками работы</li>
+                      <li><CheckCircle size={14} color="#10b981" style={{ marginRight: '8px', verticalAlign: 'middle' }} /> Функция Drag & Drop для быстрого переноса</li>
+                    </ul>
+                  </div>
+                )}
+                {featuresTab === 'f-soap' && (
+                  <div className="fade-in">
+                    <h3 style={{ fontSize: '1.5rem', color: 'white', marginBottom: '15px' }}>Электронные клинические SOAP-карты</h3>
+                    <p style={{ color: 'hsl(var(--text-secondary))', marginBottom: '20px', fontSize: '0.95rem' }}>
+                      Уникальный модуль ведения спа-ухода. Специалисты размечают проблемные зоны (гипертонус, спазмы, триггеры) на интерактивном SVG-силуэте тела в реальном времени.
+                    </p>
+                    <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '0.9rem', color: 'hsl(var(--text-secondary))' }}>
+                      <li><CheckCircle size={14} color="#10b981" style={{ marginRight: '8px', verticalAlign: 'middle' }} /> Запись жалоб (Subjective) и объективных показателей (Objective)</li>
+                      <li><CheckCircle size={14} color="#10b981" style={{ marginRight: '8px', verticalAlign: 'middle' }} /> Хранение истории сеансов в изолированной базе данных</li>
+                      <li><CheckCircle size={14} color="#10b981" style={{ marginRight: '8px', verticalAlign: 'middle' }} /> Анатомическая визуализация для контроля динамики ухода</li>
+                    </ul>
+                  </div>
+                )}
+                {featuresTab === 'f-analytics' && (
+                  <div className="fade-in">
+                    <h3 style={{ fontSize: '1.5rem', color: 'white', marginBottom: '15px' }}>Сквозная B2B-аналитика и экспорт</h3>
+                    <p style={{ color: 'hsl(var(--text-secondary))', marginBottom: '20px', fontSize: '0.95rem' }}>
+                      Контролируйте загрузку специалистов, популярность услуг по времени суток и выручку. Экспортируйте отчеты в CSV для интеграции с 1С или отельными PMS.
+                    </p>
+                    <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '0.9rem', color: 'hsl(var(--text-secondary))' }}>
+                      <li><CheckCircle size={14} color="#10b981" style={{ marginRight: '8px', verticalAlign: 'middle' }} /> Расчет эффективности каждого мастера</li>
+                      <li><CheckCircle size={14} color="#10b981" style={{ marginRight: '8px', verticalAlign: 'middle' }} /> Фильтрация по периодам и специалистам</li>
+                      <li><CheckCircle size={14} color="#10b981" style={{ marginRight: '8px', verticalAlign: 'middle' }} /> Готовые графики занятости и посещаемости гостей</li>
+                    </ul>
+                  </div>
+                )}
+
+                <div className="glass-card" style={{ padding: '20px', minHeight: '220px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.01)' }}>
+                  {featuresTab === 'f-calendar' && (
+                    <div style={{ textAlign: 'center', width: '100%' }} className="fade-in">
+                      <div style={{ fontSize: '0.75rem', color: 'hsl(var(--primary))', marginBottom: '10px', textTransform: 'uppercase', fontWeight: 600 }}>Двойной контроль конфликтов</div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div style={{ padding: '10px 15px', borderRadius: '6px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid #ef4444', color: '#fca5a5', fontSize: '0.8rem' }}>
+                          ⚠️ Конфликт: Кабинет 1 занят на это время тайским массажем!
+                        </div>
+                        <div style={{ padding: '10px 15px', borderRadius: '6px', background: 'rgba(16, 185, 129, 0.05)', border: '1px solid #10b981', color: '#a7f3d0', fontSize: '0.8rem' }}>
+                          ✓ Рекомендованное время: 12:30 (Специалист Сомбат свободен)
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {featuresTab === 'f-soap' && (
+                    <div style={{ textAlign: 'center' }} className="fade-in">
+                      <div style={{ display: 'inline-block', width: '12px', height: '12px', borderRadius: '50%', background: '#ef4444', marginRight: '8px' }}></div>
+                      <span style={{ fontSize: '0.85rem', color: 'white' }}>Активный триггер: Лопаточная область (Мышечный спазм)</span>
+                      <div style={{ display: 'flex', gap: '5px', justifyContent: 'center', marginTop: '10px' }}>
+                        <span style={{ fontSize: '0.7rem', padding: '3px 8px', borderRadius: '4px', background: '#ef4444', color: 'white' }}>S: Боли 8/10</span>
+                        <span style={{ fontSize: '0.7rem', padding: '3px 8px', borderRadius: '4px', background: '#3b82f6', color: 'white' }}>O: Гипертонус</span>
+                      </div>
+                    </div>
+                  )}
+                  {featuresTab === 'f-analytics' && (
+                    <div style={{ width: '100%' }} className="fade-in">
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: 'hsl(var(--text-secondary))', marginBottom: '5px' }}>
+                        <span>Эффективность мастеров (KPI)</span>
+                        <span>Выручка</span>
+                      </div>
+                      <div style={{ height: '8px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', overflow: 'hidden' }}>
+                        <div style={{ width: '82%', height: '100%', background: 'hsl(var(--primary))' }}></div>
+                      </div>
+                      <div style={{ marginTop: '10px', fontSize: '1.25rem', color: 'white', fontWeight: 700 }}>+238,500 ₽ <span style={{ fontSize: '0.8rem', color: '#10b981', fontWeight: 500 }}>▲ 18%</span></div>
+                    </div>
+                  )}
                 </div>
               </div>
             </section>
@@ -862,7 +1325,7 @@ export default function App() {
                     <li><CheckCircle size={14} color="#10b981" style={{ marginRight: '8px', verticalAlign: 'middle' }} /> Интерактивный календарь</li>
                     <li><CheckCircle size={14} color="#10b981" style={{ marginRight: '8px', verticalAlign: 'middle' }} /> СМС-уведомления</li>
                   </ul>
-                  <button className="btn-secondary" style={{ marginTop: 'auto', width: '100%', justifyContent: 'center' }} onClick={() => setView('login')}>
+                  <button className="btn-secondary" style={{ marginTop: 'auto', width: '100%', justifyContent: 'center' }} onClick={() => setWizardStep(1)}>
                     Выбрать тариф
                   </button>
                 </div>
@@ -886,7 +1349,7 @@ export default function App() {
                     <li><CheckCircle size={14} color="#10b981" style={{ marginRight: '8px', verticalAlign: 'middle' }} /> Учет расходников и склад</li>
                     <li><CheckCircle size={14} color="#10b981" style={{ marginRight: '8px', verticalAlign: 'middle' }} /> Интеграция YooKassa / Stripe</li>
                   </ul>
-                  <button className="btn-primary" style={{ marginTop: 'auto', width: '100%', justifyContent: 'center' }} onClick={() => setView('login')}>
+                  <button className="btn-primary" style={{ marginTop: 'auto', width: '100%', justifyContent: 'center' }} onClick={() => setWizardStep(1)}>
                     Начать 14 дней бесплатно
                   </button>
                 </div>
@@ -906,15 +1369,203 @@ export default function App() {
                     <li><CheckCircle size={14} color="#10b981" style={{ marginRight: '8px', verticalAlign: 'middle' }} /> Кастомный брендинг (White-Label)</li>
                     <li><CheckCircle size={14} color="#10b981" style={{ marginRight: '8px', verticalAlign: 'middle' }} /> Выделенный сервер & SLA 99.9%</li>
                   </ul>
-                  <button className="btn-secondary" style={{ marginTop: 'auto', width: '100%', justifyContent: 'center' }} onClick={() => setView('login')}>
-                    Связаться с отделом продаж
+                  <button className="btn-secondary" style={{ marginTop: 'auto', width: '100%', justifyContent: 'center' }} onClick={() => setWizardStep(1)}>
+                    Выбрать тариф
                   </button>
                 </div>
 
               </div>
             </section>
 
+            {/* Reviews Section */}
+            <section style={{ marginBottom: '60px', marginTop: '60px' }}>
+              <div style={{ textAlign: 'center', marginBottom: '40px' }}>
+                <span style={{ color: 'hsl(var(--primary))', fontSize: '0.85rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '10px' }}>
+                  Отзывы лидеров индустрии
+                </span>
+                <h2 style={{ fontSize: '2rem', marginBottom: '10px' }}>Доверие лучших велнес-пространств</h2>
+                <p style={{ color: 'hsl(var(--text-secondary))', maxWidth: '600px', margin: '0 auto' }}>
+                  Посмотрите, как Satva Wellness помогает автоматизировать рабочие процессы и повышать прибыль премиальным отелям и спа-курортам.
+                </p>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px' }}>
+                {/* Review 1 */}
+                <div className="glass-card" style={{ padding: '35px', display: 'flex', flexDirection: 'column', gap: '20px', position: 'relative', overflow: 'hidden' }}>
+                  <div style={{ position: 'absolute', top: '15px', right: '20px', opacity: 0.05, color: 'hsl(var(--primary))' }}>
+                    <Quote size={80} />
+                  </div>
+                  <div style={{ display: 'flex', gap: '4px', marginBottom: '5px' }}>
+                    {[...Array(5)].map((_, i) => (
+                      <Star key={i} size={16} fill="hsl(var(--primary))" color="hsl(var(--primary))" />
+                    ))}
+                  </div>
+                  <p style={{ fontSize: '1.05rem', lineHeight: '1.6', color: 'white', fontStyle: 'italic', zIndex: 1 }}>
+                    «Переход на Satva Wellness позволил нам полностью исключить накладки в бронировании VIP-кабин. Система двойного учета ресурсов работает безупречно. Загрузка спа выросла на 24% за первые три месяца!»
+                  </p>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginTop: '10px', zIndex: 1 }}>
+                    <div style={{
+                      width: '48px',
+                      height: '48px',
+                      borderRadius: '50%',
+                      background: 'linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--accent)) 100%)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '1.1rem',
+                      fontWeight: 700,
+                      color: 'white',
+                      boxShadow: '0 4px 10px rgba(0,0,0,0.3)'
+                    }}>
+                      КС
+                    </div>
+                    <div>
+                      <h4 style={{ fontSize: '0.95rem', color: 'white', fontWeight: 600 }}>Ксения Смирнова</h4>
+                      <p style={{ fontSize: '0.8rem', color: 'hsl(var(--text-secondary))' }}>Управляющая спа-комплексом, Panviman Chiang Mai Resort</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Review 2 */}
+                <div className="glass-card" style={{ padding: '35px', display: 'flex', flexDirection: 'column', gap: '20px', position: 'relative', overflow: 'hidden' }}>
+                  <div style={{ position: 'absolute', top: '15px', right: '20px', opacity: 0.05, color: 'hsl(var(--primary))' }}>
+                    <Quote size={80} />
+                  </div>
+                  <div style={{ display: 'flex', gap: '4px', marginBottom: '5px' }}>
+                    {[...Array(5)].map((_, i) => (
+                      <Star key={i} size={16} fill="hsl(var(--primary))" color="hsl(var(--primary))" />
+                    ))}
+                  </div>
+                  <p style={{ fontSize: '1.05rem', lineHeight: '1.6', color: 'white', fontStyle: 'italic', zIndex: 1 }}>
+                    «SOAP-карты на планшетах специалистов — это просто космос! Мастера в реальном времени размечают мышечные спазмы гостей, а история ухода автоматически синхронизируется между всеми нашими студиями. Клиенты в восторге от премиального сервиса.»
+                  </p>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginTop: '10px', zIndex: 1 }}>
+                    <div style={{
+                      width: '48px',
+                      height: '48px',
+                      borderRadius: '50%',
+                      background: 'linear-gradient(135deg, #10b981 0%, hsl(var(--primary)) 100%)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '1.1rem',
+                      fontWeight: 700,
+                      color: 'white',
+                      boxShadow: '0 4px 10px rgba(0,0,0,0.3)'
+                    }}>
+                      АВ
+                    </div>
+                    <div>
+                      <h4 style={{ fontSize: '0.95rem', color: 'white', fontWeight: 600 }}>Артур Вершинин</h4>
+                      <p style={{ fontSize: '0.8rem', color: 'hsl(var(--text-secondary))' }}>Основатель сети велнес-пространств Wellness Oasis Sochi</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
           </main>
+
+          {/* Premium Footer */}
+          <footer style={{
+            background: 'linear-gradient(to top, rgba(13, 148, 136, 0.04) 0%, rgba(10, 14, 23, 0.95) 100%)',
+            borderTop: '1px solid hsl(var(--border))',
+            padding: '60px 40px 30px',
+            marginTop: 'auto',
+            width: '100%'
+          }}>
+            <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1.5fr', gap: '40px', marginBottom: '40px' }}>
+              {/* Brand Col */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div style={{
+                    background: 'hsl(var(--primary))',
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '8px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}>
+                    <Activity size={18} color="white" />
+                  </div>
+                  <span style={{ fontSize: '1.25rem', fontFamily: 'var(--font-title)', fontWeight: 800, letterSpacing: '0.05em' }}>
+                    SATVA<span style={{ color: 'hsl(var(--primary))' }}>WELLNESS</span>
+                  </span>
+                </div>
+                <p style={{ color: 'hsl(var(--text-secondary))', fontSize: '0.9rem', lineHeight: '1.6' }}>
+                  Интеллектуальная B2B SaaS экосистема для автоматизации спа-салонов, велнес-клубов и санаторно-курортных зон с двойным контролем доступности ресурсов.
+                </p>
+                <div style={{ display: 'flex', gap: '15px', marginTop: '10px' }}>
+                  {['TG', 'IN', 'LN'].map((net) => (
+                    <a key={net} href="#" style={{
+                      width: '36px',
+                      height: '36px',
+                      borderRadius: '50%',
+                      border: '1px solid hsl(var(--border))',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: 'hsl(var(--text-secondary))',
+                      textDecoration: 'none',
+                      fontSize: '0.8rem',
+                      fontWeight: 600,
+                      transition: 'all 0.2s ease'
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'hsl(var(--primary))'; e.currentTarget.style.color = 'white'; e.currentTarget.style.boxShadow = '0 0 10px hsl(var(--primary) / 30%)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'hsl(var(--border))'; e.currentTarget.style.color = 'hsl(var(--text-secondary))'; e.currentTarget.style.boxShadow = 'none'; }}
+                    >
+                      {net}
+                    </a>
+                  ))}
+                </div>
+              </div>
+
+              {/* Product Col */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                <h4 style={{ color: 'white', fontSize: '0.95rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Продукт</h4>
+                <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.85rem' }}>
+                  <li><a href="#" style={{ color: 'hsl(var(--text-secondary))', textDecoration: 'none', transition: 'color 0.2s' }} onMouseEnter={(e) => e.currentTarget.style.color = 'white'} onMouseLeave={(e) => e.currentTarget.style.color = 'hsl(var(--text-secondary))'}>Возможности</a></li>
+                  <li><a href="#" style={{ color: 'hsl(var(--text-secondary))', textDecoration: 'none', transition: 'color 0.2s' }} onMouseEnter={(e) => e.currentTarget.style.color = 'white'} onMouseLeave={(e) => e.currentTarget.style.color = 'hsl(var(--text-secondary))'}>SOAP-карты</a></li>
+                  <li><a href="#roi-calculator" style={{ color: 'hsl(var(--text-secondary))', textDecoration: 'none', transition: 'color 0.2s' }} onMouseEnter={(e) => e.currentTarget.style.color = 'white'} onMouseLeave={(e) => e.currentTarget.style.color = 'hsl(var(--text-secondary))'}>Калькулятор ROI</a></li>
+                  <li><a href="#" style={{ color: 'hsl(var(--text-secondary))', textDecoration: 'none', transition: 'color 0.2s' }} onMouseEnter={(e) => e.currentTarget.style.color = 'white'} onMouseLeave={(e) => e.currentTarget.style.color = 'hsl(var(--text-secondary))'}>Тарифные планы</a></li>
+                </ul>
+              </div>
+
+              {/* Company Col */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                <h4 style={{ color: 'white', fontSize: '0.95rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Компания</h4>
+                <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.85rem' }}>
+                  <li><a href="#" style={{ color: 'hsl(var(--text-secondary))', textDecoration: 'none', transition: 'color 0.2s' }} onMouseEnter={(e) => e.currentTarget.style.color = 'white'} onMouseLeave={(e) => e.currentTarget.style.color = 'hsl(var(--text-secondary))'}>О нас</a></li>
+                  <li><a href="#" style={{ color: 'hsl(var(--text-secondary))', textDecoration: 'none', transition: 'color 0.2s' }} onMouseEnter={(e) => e.currentTarget.style.color = 'white'} onMouseLeave={(e) => e.currentTarget.style.color = 'hsl(var(--text-secondary))'}>Блог</a></li>
+                  <li><a href="#" style={{ color: 'hsl(var(--text-secondary))', textDecoration: 'none', transition: 'color 0.2s' }} onMouseEnter={(e) => e.currentTarget.style.color = 'white'} onMouseLeave={(e) => e.currentTarget.style.color = 'hsl(var(--text-secondary))'}>Вакансии</a></li>
+                  <li><a href="#" style={{ color: 'hsl(var(--text-secondary))', textDecoration: 'none', transition: 'color 0.2s' }} onMouseEnter={(e) => e.currentTarget.style.color = 'white'} onMouseLeave={(e) => e.currentTarget.style.color = 'hsl(var(--text-secondary))'}>Контакты</a></li>
+                </ul>
+              </div>
+
+              {/* Contacts Col */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                <h4 style={{ color: 'white', fontSize: '0.95rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Поддержка & Связь</h4>
+                <p style={{ color: 'hsl(var(--text-secondary))', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Phone size={14} color="hsl(var(--primary))" /> 8 (800) 555-35-35
+                </p>
+                <p style={{ color: 'hsl(var(--text-secondary))', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '0.9rem', color: 'hsl(var(--primary))' }}>✉</span> support@satva.wellness
+                </p>
+                <p style={{ color: 'hsl(var(--text-secondary))', fontSize: '0.8rem', lineHeight: '1.4', marginTop: '5px' }}>
+                  Адрес: 119019, г. Москва, ул. Новый Арбат, д. 21, оф. 1040
+                </p>
+              </div>
+            </div>
+
+            <div style={{ maxWidth: '1200px', margin: '0 auto', paddingTop: '25px', borderTop: '1px solid hsl(var(--border))', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem', color: 'hsl(var(--text-secondary))' }}>
+              <span>© {new Date().getFullYear()} Satva Wellness. Все права защищены.</span>
+              <div style={{ display: 'flex', gap: '20px' }}>
+                <a href="#" style={{ color: 'hsl(var(--text-secondary))', textDecoration: 'none' }}>Политика конфиденциальности</a>
+                <a href="#" style={{ color: 'hsl(var(--text-secondary))', textDecoration: 'none' }}>Условия использования</a>
+              </div>
+            </div>
+          </footer>
         </div>
       )}
 
@@ -983,6 +1634,19 @@ export default function App() {
             <button className="btn-secondary" style={{ width: '100%', justifyContent: 'center', marginTop: '10px' }} onClick={() => setView('landing')}>
               Вернуться на главную
             </button>
+
+            <div style={{ textAlign: 'center', marginTop: '20px', fontSize: '0.875rem', color: 'hsl(var(--text-secondary))' }}>
+              Хотите подключить свой спа-салон?{' '}
+              <span 
+                style={{ color: 'hsl(var(--primary))', cursor: 'pointer', fontWeight: 600, textDecoration: 'underline' }} 
+                onClick={() => {
+                  setView('landing');
+                  setWizardStep(1);
+                }}
+              >
+                Зарегистрироваться
+              </span>
+            </div>
           </div>
         </div>
       )}

@@ -7,7 +7,12 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://demo.localhost:8002',
+        target: 'http://localhost:8002',
+        router: (req) => {
+          const host = req.headers.host || 'localhost:5173';
+          const backendHost = host.replace('5173', '8002');
+          return `http://${backendHost}`;
+        },
         changeOrigin: true,
       },
     },

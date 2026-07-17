@@ -207,4 +207,9 @@ export const downloadCsvReport = async ({ startDate, endDate, specialistId }) =>
   URL.revokeObjectURL(url)
 }
 
+export const registerSalon = async (payload) => {
+  const { data } = await axios.post('/api/v1/public/register/', payload)
+  return data
+}
+
 export default api
